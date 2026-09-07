@@ -51,3 +51,4 @@ firebase-debug.log
 Thumbs.db
 .idea/
 .vscode/
+build/
