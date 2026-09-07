@@ -29,6 +29,7 @@ namespace SkillApp.ChickenRun
         [SerializeField] private CameraRig cameraRig;
         [SerializeField] private ChickenRunHud hud;
         [SerializeField] private CashOutButton cashOut;
+        [SerializeField] private RunEndOverlay runEnd;
 
         /// <summary>
         /// Start a run automatically when nothing tells us to. Editor and
@@ -157,6 +158,10 @@ namespace SkillApp.ChickenRun
             chicken?.ResetView();
             cameraRig?.SnapToStart();
             cashOut?.ResetButton();
+            runEnd?.Hide();
+            // Under a host, React Native drives what happens after a run; standalone,
+            // the overlay offers its own restart.
+            if (runEnd != null) runEnd.HasHost = _hostSpoke;
             // Practice until the host sends Blitz terms. A round must never show
             // money it has not been given by the server.
             hud?.ShowPractice();

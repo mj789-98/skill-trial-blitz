@@ -89,11 +89,13 @@ namespace SkillApp.EditorTools
             // ── Session ──────────────────────────────────────────────────────
             var sessionGo = new GameObject("Session");
             var session = sessionGo.AddComponent<ChickenRunSession>();
+            // Dev-only screenshot helper; compiled out of release builds.
+            sessionGo.AddComponent<DevCapture>();
 
             var camRig = camGo.AddComponent<CameraRig>();
 
             // ── HUD ──────────────────────────────────────────────────────────
-            var hud = BuildHud(game, session, input, out var cashOut);
+            var hud = BuildHud(game, session, input, out var cashOut, out var runEnd);
 
             // Wire the serialized references. Done through SerializedObject rather
             // than public fields so the inspector-facing API stays [SerializeField]
@@ -108,7 +110,8 @@ namespace SkillApp.EditorTools
                 ("chicken", chickenView),
                 ("cameraRig", camRig),
                 ("hud", hud),
-                ("cashOut", cashOut));
+                ("cashOut", cashOut),
+                ("runEnd", runEnd));
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath)!);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -132,7 +135,7 @@ namespace SkillApp.EditorTools
         /// </summary>
         private static ChickenRunHud BuildHud(
             ChickenRunGame game, ChickenRunSession session, ChickenRunInput input,
-            out CashOutButton cashOut)
+            out CashOutButton cashOut, out RunEndOverlay runEndOverlay)
         {
             var canvasGo = new GameObject("HUD",
                 typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
@@ -238,6 +241,44 @@ namespace SkillApp.EditorTools
             var hit = cashGo.AddComponent<Image>();
             hit.color = new Color(0f, 0f, 0f, 0f);
             hit.raycastTarget = true;
+
+            // ── Run-end overlay ──────────────────────────────────────────────
+            // Last child of the canvas so it draws over everything, including the
+            // Cash Out control it is meant to block.
+            var overGo = new GameObject("RunEnd", typeof(RectTransform), typeof(CanvasGroup));
+            var overRect = overGo.GetComponent<RectTransform>();
+            overRect.SetParent(canvasGo.transform, false);
+            Stretch(overRect);
+
+            var scrim = NewImage("Scrim", overRect, new Color(0f, 0f, 0.05f, 0f), null);
+            scrim.raycastTarget = true;
+            Stretch(scrim.rectTransform);
+
+            var headline = NewLabel("Headline", overRect, 96f, FontStyles.Bold);
+            headline.text = "YOU DIED";
+            Anchor(headline.rectTransform, new Vector2(0f, 0.56f), new Vector2(1f, 0.68f));
+
+            var endScore = NewLabel("EndScore", overRect, 190f, FontStyles.Bold);
+            Anchor(endScore.rectTransform, new Vector2(0f, 0.40f), new Vector2(1f, 0.56f));
+
+            var detail = NewLabel("Detail", overRect, 44f, FontStyles.Normal);
+            detail.color = new Color(0.85f, 0.87f, 0.90f);
+            Anchor(detail.rectTransform, new Vector2(0f, 0.33f), new Vector2(1f, 0.40f));
+
+            var hint = NewLabel("Hint", overRect, 36f, FontStyles.Normal);
+            hint.color = new Color(0.75f, 0.78f, 0.82f);
+            Anchor(hint.rectTransform, new Vector2(0f, 0.16f), new Vector2(1f, 0.23f));
+
+            var runEnd = overGo.AddComponent<RunEndOverlay>();
+            Wire(runEnd,
+                ("game", game),
+                ("group", overGo.GetComponent<CanvasGroup>()),
+                ("scrim", scrim),
+                ("headline", headline),
+                ("detail", detail),
+                ("scoreLabel", endScore),
+                ("hint", hint));
+            runEndOverlay = runEnd;
 
             cashOut = cashGo.AddComponent<CashOutButton>();
             Wire(cashOut,
