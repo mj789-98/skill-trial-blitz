@@ -33,6 +33,18 @@ namespace SkillApp.ChickenRun.View
     {
         [SerializeField] private ChickenRunGame game;
 
+        /// <summary>
+        /// Assigned by the scene builder to a real material asset.
+        ///
+        /// This MUST be a serialized reference rather than Shader.Find at
+        /// runtime. A shader that no material in the scene references is stripped
+        /// from a player build, so Shader.Find returns null there and every
+        /// renderer draws magenta — while working perfectly in the editor, which
+        /// has everything loaded. Referencing the asset is what makes the shader
+        /// ship.
+        /// </summary>
+        [SerializeField] private Material boardMaterial;
+
         [Header("Visible window")]
         /// Rows drawn ahead of the chicken. Enough that the player can read and
         /// plan the next few hops, which is what makes a death feel fair.
@@ -52,8 +64,16 @@ namespace SkillApp.ChickenRun.View
         [SerializeField] private Color train = new Color(0.85f, 0.80f, 0.25f);
         [SerializeField] private Color signalOn = new Color(1f, 0.25f, 0.20f);
 
-        /// <summary>The advancing kill line. Deliberately readable, not subtle.</summary>
-        [SerializeField] private Color idleShadow = new Color(0f, 0f, 0.08f, 0.55f);
+        /// <summary>
+        /// The advancing kill line. Deliberately readable, not subtle.
+        ///
+        /// Opaque, not alpha-blended: the board shares one unlit OPAQUE material,
+        /// so alpha is ignored. Rather than introduce a second transparent
+        /// material and a sorting problem for one band, it darkens by lerping the
+        /// colour itself, which reads the same at a fraction of the complexity.
+        /// </summary>
+        [SerializeField] private Color idleShadowNear = new Color(0.16f, 0.18f, 0.30f);
+        [SerializeField] private Color idleShadowClose = new Color(0.04f, 0.04f, 0.10f);
 
         private readonly Dictionary<int, GameObject> _rows = new Dictionary<int, GameObject>();
         private readonly Stack<GameObject> _rowPool = new Stack<GameObject>();
@@ -72,11 +92,28 @@ namespace SkillApp.ChickenRun.View
             // One unlit material, instanced per renderer via a property block.
             // A stylised low-poly board needs no lighting model, and unlit is
             // dramatically cheaper on the mid-range Android this targets.
-            var shader = Shader.Find("Universal Render Pipeline/Unlit")
-                         ?? Shader.Find("Unlit/Color");
-            _sharedMaterial = new Material(shader);
+            if (boardMaterial != null)
+            {
+                _sharedMaterial = boardMaterial;
+            }
+            else
+            {
+                // Editor-only convenience so the scene still renders if it was
+                // opened before the builder assigned the asset. Never relied on
+                // in a build — see the field comment.
+                var shader = Shader.Find("Universal Render Pipeline/Unlit")
+                             ?? Shader.Find("Unlit/Color");
+                if (shader == null)
+                {
+                    Debug.LogError(
+                        "[world] no board material assigned and the unlit shader was " +
+                        "stripped from this build; everything will draw magenta.");
+                    return;
+                }
+                _sharedMaterial = new Material(shader);
+            }
 
-            _shadowQuad = BuildQuad("IdleShadow", idleShadow);
+            _shadowQuad = BuildQuad("IdleShadow", idleShadowNear);
             _shadowQuad.transform.SetParent(_root, false);
             _shadowQuad.SetActive(false);
         }
@@ -236,25 +273,31 @@ namespace SkillApp.ChickenRun.View
 
         private void RedrawIdleShadow(Sim.State state)
         {
-            int line = Sim.IdleLineRow(state);
+            // Show it only once the line is actually MOVING — i.e. the grace
+            // period has expired and the player is being pushed.
+            //
+            // The first version tested `line >= row - IdleLeadRows`, which is true
+            // on the very first tick of every run (the line rests exactly
+            // IdleLeadRows behind), so the warning was permanently on screen and
+            // stopped being a warning at all.
+            int idleTicks = state.Tick - state.LastAdvanceTick;
+            bool threatening = idleTicks > Sim.IdleGraceTicks;
 
-            // Only show it once it is actually a threat; drawing it from the start
-            // of every run would make a permanent feature out of a warning.
-            bool threatening = line >= state.Row - Sim.IdleLeadRows;
             _shadowQuad.SetActive(threatening);
             if (!threatening) return;
 
-            // Positioned exactly on the row the simulation will kill at, so the
-            // player can read the danger rather than being told about it.
-            _shadowQuad.transform.localScale = new Vector3(Sim.Cols + 2f, 1f, 8f);
-            _shadowQuad.transform.localPosition =
-                new Vector3((Sim.Cols - 1) * 0.5f, 0.3f, line - 3.5f);
+            int line = Sim.IdleLineRow(state);
 
-            // Pulse as it closes in.
+            // Flat on the ground rather than a slab. The first version was a
+            // 1-unit-tall cube at y=0.3, which spanned the chicken's own height
+            // and hid it completely behind the very thing chasing it.
+            _shadowQuad.transform.localScale = new Vector3(Sim.Cols + 4f, 0.02f, 7f);
+            _shadowQuad.transform.localPosition =
+                new Vector3((Sim.Cols - 1) * 0.5f, 0.015f, line - 3.4f);
+
+            // Darken as it closes, so the pressure is legible without a UI element.
             float urgency = Mathf.InverseLerp(state.Row - 4f, state.Row, line);
-            var c = idleShadow;
-            c.a *= Mathf.Lerp(0.55f, 1f, urgency);
-            Tint(_shadowQuad, c);
+            Tint(_shadowQuad, Color.Lerp(idleShadowNear, idleShadowClose, urgency));
         }
 
         private GameObject TakeMover()
