@@ -185,8 +185,8 @@ Only after Chicken Run **and** Blitz are finished and polished.
 
 | # | Requirement | Status |
 |---|---|---|
-| 6.1 | **Public GitHub repo**, link sent | **TODO — no remote; 19 local commits** |
-| 6.2 | Commit incrementally (they read the history) | DONE — 19 focused commits |
+| 6.1 | **Public GitHub repo**, link sent | DONE — https://github.com/mj789-98/skill-trial-blitz |
+| 6.2 | Commit incrementally (they read the history) | DONE — pushed as work proceeds, not in one lump |
 | 6.3 | README: run from clean checkout | TODO |
 | 6.4 | README: versions used | DONE |
 | 6.5 | README: platform targeted | DONE |
@@ -220,9 +220,10 @@ localisation, accessibility audits, analytics · supporting both platforms.
 Drafted in `docs/telegram-questions.md`, **not yet sent**:
 
 1. Sub-break-even band — partial multiplier or hard zero?
-2. The brief references *"every feature thoughts prompt in your personal
-   assignment document"* — **no such document was provided.** Only the
-   assignment text and the media in `TSTrial/`. Assuming it maps to §2.6 and §3.
+2. ~~Personal assignment document~~ — **RESOLVED.** The document is titled
+   "Unity Work Trial - Manas", so it IS the personal assignment document. The
+   "feature thoughts" prompts are §2.5 (three decisions), §2.6 (four design
+   questions) and §3 (two Pop Shot questions). No longer a blocker.
 3. Cash only, or gems too?
 4. Practice mode alongside Blitz?
 5. Prize Wheel — in scope?
