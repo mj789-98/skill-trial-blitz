@@ -1,3 +1,4 @@
+using System;
 using System.IO;
 using UnityEditor;
 using UnityEditor.Build;
@@ -232,6 +233,100 @@ namespace SkillApp.EditorTools
                     $"Android export failed: {summary.result}, {summary.totalErrors} error(s). " +
                     "See the Unity log for the underlying cause.");
             }
+
+            PostProcessExport(absolute);
+        }
+
+        /// <summary>
+        /// Fix up the exported Gradle project so it can be consumed as a library.
+        ///
+        /// Done here, in the export, rather than as a documented manual step:
+        /// the directory is regenerated from scratch every time, so any hand edit
+        /// is silently undone by the next export — and the symptom (a second
+        /// launcher icon, or a version-mismatched NDK) would show up much later
+        /// than the cause.
+        /// </summary>
+        private static void PostProcessExport(string exportRoot)
+        {
+            var manifest = Path.Combine(
+                exportRoot, "unityLibrary", "src", "main", "AndroidManifest.xml");
+
+            if (File.Exists(manifest))
+            {
+                var xml = File.ReadAllText(manifest);
+
+                // Unity exports its activity as a LAUNCHER entry point, which is
+                // right for a standalone game and wrong here: React Native owns
+                // the launcher, and leaving this in installs a second icon that
+                // boots straight into the game, bypassing auth and the payout
+                // screen entirely.
+                var start = xml.IndexOf("<intent-filter>", StringComparison.Ordinal);
+                var end = xml.IndexOf("</intent-filter>", StringComparison.Ordinal);
+                if (start >= 0 && end > start)
+                {
+                    xml = xml.Remove(start, end - start + "</intent-filter>".Length);
+                    File.WriteAllText(manifest, xml);
+                    Debug.Log("[build] stripped the LAUNCHER intent-filter from unityLibrary");
+                }
+            }
+            else
+            {
+                Debug.LogWarning($"[build] expected manifest not found at {manifest}");
+            }
+
+            AlignNdkVersion(Path.Combine(exportRoot, "unityLibrary", "build.gradle"));
+        }
+
+        /// <summary>
+        /// Make unityLibrary's ndkVersion match whichever NDK is actually
+        /// installed for the host app.
+        ///
+        /// Unity writes the version of its own bundled NDK, which need not be the
+        /// one React Native pins. Gradle resolves ndkVersion per module against
+        /// the Android SDK, and Unity's copy lives inside the editor install
+        /// rather than the SDK — so the declared version can simply be absent and
+        /// the build fails on a module we do not own.
+        ///
+        /// unityLibrary ships prebuilt .so files and compiles no native code
+        /// here, so the declaration only has to resolve.
+        /// </summary>
+        private static void AlignNdkVersion(string gradlePath)
+        {
+            if (!File.Exists(gradlePath)) return;
+
+            var sdkRoot = EditorPrefs.GetString("AndroidSdkRoot");
+            var ndkDir = string.IsNullOrEmpty(sdkRoot) ? null : Path.Combine(sdkRoot, "ndk");
+            if (ndkDir == null || !Directory.Exists(ndkDir)) return;
+
+            var text = File.ReadAllText(gradlePath);
+            var match = System.Text.RegularExpressions.Regex.Match(
+                text, "ndkVersion\\s+\"([^\"]+)\"");
+            if (!match.Success) return;
+
+            var declared = match.Groups[1].Value;
+            if (Directory.Exists(Path.Combine(ndkDir, declared)))
+            {
+                Debug.Log($"[build] unityLibrary ndkVersion {declared} is installed; left as is");
+                return;
+            }
+
+            var installed = Directory.GetDirectories(ndkDir);
+            if (installed.Length == 0)
+            {
+                Debug.LogWarning(
+                    $"[build] unityLibrary wants NDK {declared} but no NDK is installed in {ndkDir}");
+                return;
+            }
+
+            System.Array.Sort(installed);
+            var replacement = Path.GetFileName(installed[installed.Length - 1]);
+            text = text.Replace($"ndkVersion \"{declared}\"", $"ndkVersion \"{replacement}\"");
+            File.WriteAllText(gradlePath, text);
+
+            Debug.Log(
+                $"[build] unityLibrary ndkVersion {declared} is not installed in the SDK; " +
+                $"rewrote it to {replacement}. unityLibrary ships prebuilt .so files and " +
+                "compiles no native code, so the declaration only has to resolve.");
         }
     }
 }

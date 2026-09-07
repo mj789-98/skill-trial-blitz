@@ -19,3 +19,11 @@ buildscript {
 }
 
 apply plugin: "com.facebook.react.rootproject"
+
+// unityLibrary ships unity-classes.jar as a bare file rather than a published
+// artifact, so every project that resolves against it needs a flatDir repo.
+allprojects {
+    repositories {
+        flatDir { dirs "${project(':unityLibrary').projectDir}/libs" }
+    }
+}
