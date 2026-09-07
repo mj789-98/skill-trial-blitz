@@ -1,7 +1,7 @@
 using System;
 using System.Collections.Generic;
 
-namespace SkillApp.ChickenRun.Sim
+namespace SkillApp.ChickenRun.Simulation
 {
     /// <summary>
     /// Chicken Run — the client-side simulation.
