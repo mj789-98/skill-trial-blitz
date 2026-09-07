@@ -278,55 +278,69 @@ namespace SkillApp.EditorTools
         }
 
         /// <summary>
-        /// Make unityLibrary's ndkVersion match whichever NDK is actually
-        /// installed for the host app.
+        /// Verify unityLibrary's NDK declaration is self-consistent.
         ///
-        /// Unity writes the version of its own bundled NDK, which need not be the
-        /// one React Native pins. Gradle resolves ndkVersion per module against
-        /// the Android SDK, and Unity's copy lives inside the editor install
-        /// rather than the SDK — so the declared version can simply be absent and
-        /// the build fails on a module we do not own.
+        /// This deliberately does NOT rewrite anything when Unity sets ndkPath,
+        /// which it always does for an export. An earlier version of this method
+        /// rewrote ndkVersion to whichever NDK was installed in the Android SDK,
+        /// on the theory that Gradle resolves ndkVersion against the SDK and
+        /// Unity's own NDK lives outside it.
         ///
-        /// unityLibrary ships prebuilt .so files and compiles no native code
-        /// here, so the declaration only has to resolve.
+        /// That premise was wrong, and the rewrite caused a failure rather than
+        /// preventing one:
+        ///
+        ///   [CXX1100] android.ndkVersion is [27.1.12297006] but android.ndkPath
+        ///   ... refers to a different version [27.2.12479018]
+        ///
+        /// When ndkPath is present Gradle uses it directly, so ndkVersion never
+        /// had to exist in the SDK — and changing only one half of the pair is
+        /// what broke it. Unity writes both consistently; the right move is to
+        /// leave them alone and only complain if they ever disagree.
         /// </summary>
         private static void AlignNdkVersion(string gradlePath)
         {
             if (!File.Exists(gradlePath)) return;
 
-            var sdkRoot = EditorPrefs.GetString("AndroidSdkRoot");
-            var ndkDir = string.IsNullOrEmpty(sdkRoot) ? null : Path.Combine(sdkRoot, "ndk");
-            if (ndkDir == null || !Directory.Exists(ndkDir)) return;
-
             var text = File.ReadAllText(gradlePath);
-            var match = System.Text.RegularExpressions.Regex.Match(
+            var pathMatch = System.Text.RegularExpressions.Regex.Match(
+                text, "ndkPath\\s+\"([^\"]+)\"");
+            var versionMatch = System.Text.RegularExpressions.Regex.Match(
                 text, "ndkVersion\\s+\"([^\"]+)\"");
-            if (!match.Success) return;
 
-            var declared = match.Groups[1].Value;
-            if (Directory.Exists(Path.Combine(ndkDir, declared)))
+            if (!versionMatch.Success) return;
+            var declaredVersion = versionMatch.Groups[1].Value;
+
+            if (!pathMatch.Success)
             {
-                Debug.Log($"[build] unityLibrary ndkVersion {declared} is installed; left as is");
+                Debug.Log(
+                    $"[build] unityLibrary declares ndkVersion {declaredVersion} with no " +
+                    "ndkPath; Gradle will resolve it against the Android SDK.");
                 return;
             }
 
-            var installed = Directory.GetDirectories(ndkDir);
-            if (installed.Length == 0)
+            // Cross-check the pair, since a mismatch here fails the host app's
+            // build on a module we do not own and the message points at Gradle
+            // rather than at the export that produced it.
+            var props = Path.Combine(pathMatch.Groups[1].Value, "source.properties");
+            if (File.Exists(props))
             {
-                Debug.LogWarning(
-                    $"[build] unityLibrary wants NDK {declared} but no NDK is installed in {ndkDir}");
-                return;
+                foreach (var line in File.ReadAllLines(props))
+                {
+                    if (!line.StartsWith("Pkg.Revision", StringComparison.Ordinal)) continue;
+                    var actual = line.Split('=')[1].Trim();
+                    if (actual != declaredVersion)
+                    {
+                        Debug.LogWarning(
+                            $"[build] unityLibrary ndkVersion {declaredVersion} disagrees with " +
+                            $"the NDK at ndkPath ({actual}). Gradle will reject this.");
+                    }
+                    break;
+                }
             }
-
-            System.Array.Sort(installed);
-            var replacement = Path.GetFileName(installed[installed.Length - 1]);
-            text = text.Replace($"ndkVersion \"{declared}\"", $"ndkVersion \"{replacement}\"");
-            File.WriteAllText(gradlePath, text);
 
             Debug.Log(
-                $"[build] unityLibrary ndkVersion {declared} is not installed in the SDK; " +
-                $"rewrote it to {replacement}. unityLibrary ships prebuilt .so files and " +
-                "compiles no native code, so the declaration only has to resolve.");
+                $"[build] unityLibrary NDK {declaredVersion} at an explicit ndkPath; " +
+                "left untouched.");
         }
     }
 }
