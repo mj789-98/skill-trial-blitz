@@ -274,7 +274,147 @@ namespace SkillApp.EditorTools
                 Debug.LogWarning($"[build] expected manifest not found at {manifest}");
             }
 
-            AlignNdkVersion(Path.Combine(exportRoot, "unityLibrary", "build.gradle"));
+            var libGradle = Path.Combine(exportRoot, "unityLibrary", "build.gradle");
+            AlignNdkVersion(libGradle);
+            FixIl2CppTaskScoping(libGradle);
+        }
+
+        /// <summary>
+        /// Make Unity's generated buildIl2Cpp task work under Gradle 9.
+        ///
+        /// Unity registers the task inside the `android { }` block and calls the
+        /// script-level method BuildIl2CppImpl from its doLast closure. Under
+        /// Gradle 9 that closure's owner chain no longer reaches script methods,
+        /// so the build gets all the way through CMake and then dies with:
+        ///
+        ///   Could not find method BuildIl2CppImpl() for arguments [...] on task
+        ///   ':unityLibrary:buildIl2Cpp' of type org.gradle.api.DefaultTask
+        ///
+        /// Configuration-time calls to the sibling Get* methods resolve fine —
+        /// only the deferred closure fails, which is why this surfaces at the very
+        /// last task rather than at configuration.
+        ///
+        /// The fix binds a method reference at script scope, where resolution
+        /// still works, and calls that from the closure. Done in the export
+        /// because the file is regenerated every time.
+        /// </summary>
+        private static void FixIl2CppTaskScoping(string gradlePath)
+        {
+            if (!File.Exists(gradlePath)) return;
+
+            var text = File.ReadAllText(gradlePath);
+            const string call = "BuildIl2CppImpl(workingDir, 'Release', arch, abi, staticLibs[arch] as String[]);";
+            const string patched = "buildIl2CppRef(workingDir, 'Release', arch, abi, staticLibs[arch] as String[]);";
+
+            if (text.Contains(patched))
+            {
+                Debug.Log("[build] buildIl2Cpp scoping fix already present");
+                return;
+            }
+            if (!text.Contains(call))
+            {
+                Debug.LogWarning(
+                    "[build] could not find the BuildIl2CppImpl call site; Unity's export " +
+                    "template may have changed. If the build fails at :unityLibrary:buildIl2Cpp, " +
+                    "this fixup is why.");
+                return;
+            }
+
+            text = text.Replace(call, patched);
+
+            // Bind the reference at script scope, immediately before the android
+            // block that registers the task.
+            const string anchor = "android {\n    tasks.register('buildIl2Cpp')";
+            const string anchorCrLf = "android {\r\n    tasks.register('buildIl2Cpp')";
+            const string binding =
+                "// Bound at script scope so the doLast closure below can reach it: under\n" +
+                "// Gradle 9 a closure inside `android { }` no longer resolves script methods.\n" +
+                "def buildIl2CppRef = this.&BuildIl2CppImpl\n\n";
+
+            if (text.Contains(anchor)) text = text.Replace(anchor, binding + anchor);
+            else if (text.Contains(anchorCrLf)) text = text.Replace(anchorCrLf, binding + anchorCrLf);
+            else
+            {
+                Debug.LogWarning("[build] could not place the buildIl2CppRef binding");
+                return;
+            }
+
+            File.WriteAllText(gradlePath, text);
+            Debug.Log("[build] patched buildIl2Cpp for Gradle 9 closure scoping");
+
+            ReplaceRemovedExecApi(gradlePath);
+        }
+
+        /// <summary>
+        /// Replace Unity's `exec { }` call, which Gradle 9 removed.
+        ///
+        /// Project.exec() was deprecated through Gradle 8 and deleted in 9, so
+        /// Unity's IL2CPP step fails with:
+        ///
+        ///   Could not find method exec() for arguments [...] on project
+        ///   ':unityLibrary' of type org.gradle.api.Project
+        ///
+        /// A plain ProcessBuilder is used rather than Gradle's replacement
+        /// (injecting ExecOperations through an ObjectFactory) because that
+        /// requires declaring an @Inject interface inside the build script and
+        /// relies on script-scope visibility rules that are exactly what the
+        /// previous fixup had to work around. ProcessBuilder has no such
+        /// coupling, and it fails loudly with the child's own output.
+        ///
+        /// The working directory is set explicitly: `exec` defaulted to the
+        /// project directory, whereas ProcessBuilder would inherit the Gradle
+        /// daemon's, which is somewhere else entirely.
+        /// </summary>
+        private static void ReplaceRemovedExecApi(string gradlePath)
+        {
+            var text = File.ReadAllText(gradlePath);
+            if (text.Contains("il2cppProcessBuilder"))
+            {
+                Debug.Log("[build] exec() replacement already present");
+                return;
+            }
+
+            var marker = text.IndexOf("    exec {", StringComparison.Ordinal);
+            if (marker < 0)
+            {
+                Debug.LogWarning(
+                    "[build] could not find Unity's exec { } block; if the build fails at " +
+                    ":unityLibrary:buildIl2Cpp with \"Could not find method exec()\", this " +
+                    "fixup needs updating for the new export template.");
+                return;
+            }
+
+            var closeIdx = text.IndexOf("\n    }", marker, StringComparison.Ordinal);
+            if (closeIdx < 0)
+            {
+                Debug.LogWarning("[build] could not find the end of the exec { } block");
+                return;
+            }
+            var blockEnd = closeIdx + "\n    }".Length;
+
+            var replacement = string.Join("\n", new[]
+            {
+                "    // Gradle 9 removed Project.exec(); run IL2CPP directly instead.",
+                "    def il2cppExecutable = \"${workingDir}/src/main/Il2CppOutputProject/IL2CPP/build/deploy/il2cpp${executableExtension}\"",
+                "    // Every element must be a real String: the executable is a GString and",
+                "    // commandLineArgs holds GStrings too, which makes the list an Object[]",
+                "    // and ProcessBuilder(List<String>) fails with an arraycopy type mismatch.",
+                "    def il2cppCommand = ([il2cppExecutable.toString()] + commandLineArgs*.toString()) as List<String>",
+                "    def il2cppProcessBuilder = new ProcessBuilder(il2cppCommand)",
+                "    il2cppProcessBuilder.directory(new File(workingDir))",
+                "    il2cppProcessBuilder.environment().put(\"ANDROID_SDK_ROOT\", getSdkDir())",
+                "    il2cppProcessBuilder.redirectErrorStream(true)",
+                "    def il2cppProcess = il2cppProcessBuilder.start()",
+                "    il2cppProcess.inputStream.eachLine { println it }",
+                "    def il2cppExit = il2cppProcess.waitFor()",
+                "    if (il2cppExit != 0) {",
+                "        throw new GradleException(\"il2cpp failed with exit code ${il2cppExit}\")",
+                "    }",
+            });
+
+            text = text.Remove(marker, blockEnd - marker).Insert(marker, replacement);
+            File.WriteAllText(gradlePath, text);
+            Debug.Log("[build] replaced Gradle 9's removed exec() with a ProcessBuilder call");
         }
 
         /// <summary>
