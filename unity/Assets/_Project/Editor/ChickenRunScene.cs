@@ -30,6 +30,8 @@ namespace SkillApp.EditorTools
         [MenuItem("SkillApp/Build Chicken Run Scene")]
         public static void Build()
         {
+            var boardMaterial = EnsureBoardMaterial();
+
             var scene = EditorSceneManager.NewScene(
                 NewSceneSetup.EmptyScene, NewSceneMode.Single);
 
@@ -70,6 +72,9 @@ namespace SkillApp.EditorTools
             bodyGo.name = "Body";
             bodyGo.transform.SetParent(chickenGo.transform, false);
             Object.DestroyImmediate(bodyGo.GetComponent<Collider>());
+            // The primitive ships with the built-in Default-Material, which URP
+            // cannot render — it would draw magenta.
+            bodyGo.GetComponent<MeshRenderer>().sharedMaterial = boardMaterial;
 
             var chickenView = chickenGo.AddComponent<ChickenView>();
 
@@ -89,7 +94,7 @@ namespace SkillApp.EditorTools
             // than public fields so the inspector-facing API stays [SerializeField]
             // private, which is what keeps other code from reaching in at runtime.
             Wire(input, ("game", game));
-            Wire(world, ("game", game));
+            Wire(world, ("game", game), ("boardMaterial", boardMaterial));
             Wire(chickenView, ("game", game), ("body", bodyGo.transform));
             Wire(camRig, ("game", game), ("camera", cam));
             Wire(session,
@@ -109,6 +114,37 @@ namespace SkillApp.EditorTools
             };
 
             Debug.Log($"[scene] built {ScenePath}");
+        }
+
+        /// <summary>
+        /// Create the shared board material as a project ASSET.
+        ///
+        /// It has to be an asset rather than a material built at runtime. A shader
+        /// that no material references is stripped from a player build, so
+        /// Shader.Find returns null there and every renderer draws magenta — while
+        /// working perfectly in the editor, which has everything loaded. This was
+        /// a real failure, caught only by running the desktop build.
+        /// </summary>
+        private static Material EnsureBoardMaterial()
+        {
+            const string path = "Assets/_Project/ChickenRun/View/Board.mat";
+
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (existing != null) return existing;
+
+            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            if (shader == null)
+            {
+                Debug.LogWarning("[scene] URP Unlit not found; falling back to Unlit/Color");
+                shader = Shader.Find("Unlit/Color");
+            }
+
+            var material = new Material(shader) { name = "Board" };
+            Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+            AssetDatabase.CreateAsset(material, path);
+            AssetDatabase.SaveAssets();
+            Debug.Log($"[scene] created {path}");
+            return material;
         }
 
         private static void Wire(Object target, params (string field, Object value)[] pairs)
