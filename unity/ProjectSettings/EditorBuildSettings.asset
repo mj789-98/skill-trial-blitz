@@ -6,7 +6,7 @@ EditorBuildSettings:
   serializedVersion: 2
   m_Scenes:
   - enabled: 1
-    path: Assets/Scenes/Spike.unity
-    guid: 5c9ab91ea44b9e64cad0237413d219a5
+    path: Assets/Scenes/ChickenRun.unity
+    guid: 3f67f61f0189d2e4b89dffd7886c6ea5
   m_configObjects: {}
   m_UseUCBPForAssetBundles: 0
