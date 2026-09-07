@@ -2,6 +2,8 @@ using System.IO;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
+using UnityEngine.UI;
+using TMPro;
 using SkillApp.Bridge;
 using SkillApp.ChickenRun;
 using SkillApp.ChickenRun.View;
@@ -90,6 +92,9 @@ namespace SkillApp.EditorTools
 
             var camRig = camGo.AddComponent<CameraRig>();
 
+            // ── HUD ──────────────────────────────────────────────────────────
+            var hud = BuildHud(game, session, input, out var cashOut);
+
             // Wire the serialized references. Done through SerializedObject rather
             // than public fields so the inspector-facing API stays [SerializeField]
             // private, which is what keeps other code from reaching in at runtime.
@@ -101,7 +106,9 @@ namespace SkillApp.EditorTools
                 ("game", game),
                 ("world", world),
                 ("chicken", chickenView),
-                ("cameraRig", camRig));
+                ("cameraRig", camRig),
+                ("hud", hud),
+                ("cashOut", cashOut));
 
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath)!);
             EditorSceneManager.SaveScene(scene, ScenePath);
@@ -115,6 +122,191 @@ namespace SkillApp.EditorTools
 
             Debug.Log($"[scene] built {ScenePath}");
         }
+
+        /// <summary>
+        /// Build the HUD: score pill top-centre, Cash Out egg bottom-right.
+        ///
+        /// uGUI rather than UI Toolkit. The assignment asks for boring and
+        /// maintainable over clever, and uGUI is the mature option for a HUD this
+        /// small — two labels and a radial fill.
+        /// </summary>
+        private static ChickenRunHud BuildHud(
+            ChickenRunGame game, ChickenRunSession session, ChickenRunInput input,
+            out CashOutButton cashOut)
+        {
+            var canvasGo = new GameObject("HUD",
+                typeof(Canvas), typeof(CanvasScaler), typeof(GraphicRaycaster));
+
+            var canvas = canvasGo.GetComponent<Canvas>();
+            canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+
+            var scaler = canvasGo.GetComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1080f, 1920f);
+            // Match height, because the game is portrait and vertical space is
+            // what the layout is anchored to. Matching width would shrink the HUD
+            // on a tall phone.
+            scaler.matchWidthOrHeight = 1f;
+
+            // A hold needs pointer events, which need an EventSystem in the scene.
+            // Without one the Cash Out button is simply inert, with no error.
+            new GameObject("EventSystem",
+                typeof(UnityEngine.EventSystems.EventSystem),
+                typeof(UnityEngine.EventSystems.StandaloneInputModule));
+
+            // Everything hangs off a safe-area frame so a notch or a punch-hole
+            // camera cannot sit on top of the score.
+            var safeGo = new GameObject("SafeArea", typeof(RectTransform), typeof(SafeAreaFrame));
+            var safe = safeGo.GetComponent<RectTransform>();
+            safe.SetParent(canvasGo.transform, false);
+            Stretch(safe);
+
+            // ── Score pill ───────────────────────────────────────────────────
+            var pill = NewImage("ScorePill", safe,
+                new Color(0.13f, 0.24f, 0.28f), UiSprite());
+            pill.type = Image.Type.Sliced;
+            var pillRect = pill.rectTransform;
+            pillRect.anchorMin = new Vector2(0.5f, 1f);
+            pillRect.anchorMax = new Vector2(0.5f, 1f);
+            pillRect.pivot = new Vector2(0.5f, 1f);
+            pillRect.anchoredPosition = new Vector2(0f, -40f);
+            pillRect.sizeDelta = new Vector2(260f, 130f);
+
+            var scoreLabel = NewLabel("Score", pillRect, 84f, FontStyles.Bold);
+            Stretch(scoreLabel.rectTransform);
+
+            // ── Blitz readout ────────────────────────────────────────────────
+            var blitzGo = new GameObject("BlitzPanel", typeof(RectTransform));
+            var blitzRect = blitzGo.GetComponent<RectTransform>();
+            blitzRect.SetParent(safe, false);
+            blitzRect.anchorMin = new Vector2(0.5f, 1f);
+            blitzRect.anchorMax = new Vector2(0.5f, 1f);
+            blitzRect.pivot = new Vector2(0.5f, 1f);
+            blitzRect.anchoredPosition = new Vector2(0f, -180f);
+            blitzRect.sizeDelta = new Vector2(600f, 130f);
+
+            var multiplier = NewLabel("Multiplier", blitzRect, 56f, FontStyles.Bold);
+            Anchor(multiplier.rectTransform, new Vector2(0f, 0f), new Vector2(0.34f, 1f));
+
+            var payout = NewLabel("Payout", blitzRect, 56f, FontStyles.Bold);
+            payout.color = new Color(0.55f, 0.95f, 0.55f);
+            Anchor(payout.rectTransform, new Vector2(0.34f, 0f), new Vector2(0.68f, 1f));
+
+            var nextStep = NewLabel("NextStep", blitzRect, 40f, FontStyles.Normal);
+            nextStep.color = new Color(0.85f, 0.85f, 0.85f);
+            Anchor(nextStep.rectTransform, new Vector2(0.68f, 0f), new Vector2(1f, 1f));
+
+            blitzGo.SetActive(false);
+
+            // ── Cash Out ─────────────────────────────────────────────────────
+            var cashGo = new GameObject("CashOut", typeof(RectTransform));
+            var cashRect = cashGo.GetComponent<RectTransform>();
+            cashRect.SetParent(safe, false);
+            cashRect.anchorMin = new Vector2(1f, 0f);
+            cashRect.anchorMax = new Vector2(1f, 0f);
+            cashRect.pivot = new Vector2(1f, 0f);
+            cashRect.anchoredPosition = new Vector2(-60f, 90f);
+            cashRect.sizeDelta = new Vector2(260f, 300f);
+
+            // The ring sits BEHIND the egg so the fill reads as a halo closing
+            // around it rather than a bar drawn over the top.
+            var ring = NewImage("Ring", cashRect, new Color(0.35f, 0.90f, 0.35f), Knob());
+            ring.type = Image.Type.Filled;
+            ring.fillMethod = Image.FillMethod.Radial360;
+            ring.fillOrigin = (int)Image.Origin360.Top;
+            ring.fillClockwise = true;
+            ring.fillAmount = 0f;
+            Anchor(ring.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            ring.rectTransform.sizeDelta = new Vector2(240f, 240f);
+            ring.rectTransform.anchoredPosition = new Vector2(0f, -120f);
+
+            var egg = NewImage("Egg", cashRect, Color.white, Knob());
+            Anchor(egg.rectTransform, new Vector2(0.5f, 1f), new Vector2(0.5f, 1f));
+            egg.rectTransform.sizeDelta = new Vector2(180f, 180f);
+            egg.rectTransform.anchoredPosition = new Vector2(0f, -120f);
+
+            var cashLabel = NewLabel("CashOutLabel", cashRect, 38f, FontStyles.Bold);
+            cashLabel.text = "CASH\nOUT";
+            cashLabel.alignment = TextAlignmentOptions.Center;
+            Anchor(cashLabel.rectTransform, new Vector2(0f, 0f), new Vector2(1f, 0f));
+            cashLabel.rectTransform.sizeDelta = new Vector2(0f, 110f);
+            cashLabel.rectTransform.anchoredPosition = new Vector2(0f, 10f);
+
+            // The hit target is the whole block, not just the egg: a 180px circle
+            // is a small target under a thumb, and missing it in a panic is the
+            // worst possible time to be fighting the UI.
+            var hit = cashGo.AddComponent<Image>();
+            hit.color = new Color(0f, 0f, 0f, 0f);
+            hit.raycastTarget = true;
+
+            cashOut = cashGo.AddComponent<CashOutButton>();
+            Wire(cashOut,
+                ("session", session), ("game", game), ("input", input),
+                ("progressRing", ring), ("egg", egg.rectTransform));
+
+            var hud = canvasGo.AddComponent<ChickenRunHud>();
+            Wire(hud,
+                ("game", game),
+                ("scoreLabel", scoreLabel),
+                ("blitzPanel", blitzGo),
+                ("multiplierLabel", multiplier),
+                ("payoutLabel", payout),
+                ("nextStepLabel", nextStep));
+
+            return hud;
+        }
+
+        private static Image NewImage(string name, Transform parent, Color color, Sprite sprite)
+        {
+            var go = new GameObject(name, typeof(RectTransform), typeof(Image));
+            go.transform.SetParent(parent, false);
+            var img = go.GetComponent<Image>();
+            img.color = color;
+            img.sprite = sprite;
+            img.raycastTarget = false;
+            return img;
+        }
+
+        private static TMP_Text NewLabel(string name, Transform parent, float size, FontStyles style)
+        {
+            var go = new GameObject(name, typeof(RectTransform));
+            go.transform.SetParent(parent, false);
+            var label = go.AddComponent<TextMeshProUGUI>();
+            label.fontSize = size;
+            label.fontStyle = style;
+            label.alignment = TextAlignmentOptions.Center;
+            label.color = Color.white;
+            label.raycastTarget = false;
+            label.text = "0";
+            return label;
+        }
+
+        private static void Stretch(RectTransform rect)
+        {
+            rect.anchorMin = Vector2.zero;
+            rect.anchorMax = Vector2.one;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
+        private static void Anchor(RectTransform rect, Vector2 min, Vector2 max)
+        {
+            rect.anchorMin = min;
+            rect.anchorMax = max;
+            rect.offsetMin = Vector2.zero;
+            rect.offsetMax = Vector2.zero;
+        }
+
+        /// <summary>
+        /// Unity's built-in rounded-rect UI sprite. Using the built-ins avoids
+        /// shipping art for a grey-box HUD, and they are included in the build
+        /// because the scene references them.
+        /// </summary>
+        private static Sprite UiSprite() =>
+            AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/UISprite.psd");
+
+        private static Sprite Knob() =>
+            AssetDatabase.GetBuiltinExtraResource<Sprite>("UI/Skin/Knob.psd");
 
         /// <summary>
         /// Create the shared board material as a project ASSET.

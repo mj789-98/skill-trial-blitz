@@ -27,6 +27,8 @@ namespace SkillApp.ChickenRun
         [SerializeField] private WorldView world;
         [SerializeField] private ChickenView chicken;
         [SerializeField] private CameraRig cameraRig;
+        [SerializeField] private ChickenRunHud hud;
+        [SerializeField] private CashOutButton cashOut;
 
         /// <summary>
         /// Start a run automatically when nothing tells us to. Editor and
@@ -154,6 +156,10 @@ namespace SkillApp.ChickenRun
 
             chicken?.ResetView();
             cameraRig?.SnapToStart();
+            cashOut?.ResetButton();
+            // Practice until the host sends Blitz terms. A round must never show
+            // money it has not been given by the server.
+            hud?.ShowPractice();
             game.StartRun(seed);
         }
 
