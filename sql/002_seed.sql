@@ -57,8 +57,11 @@ select 'chicken_run', 'baseline-v0', $json${
   "ceiling_guard": {
     "pb_window": 20,
     "max_target_vs_pb": 0.92,
+    "min_target_vs_pb": 0.45,
+    "floor_percentile": 0.9,
     "idle_decay_per_day": 0.04
   },
+  "min_target": 5,
   "quote_ttl_seconds": 180,
   "round_deadline_seconds": 900,
   "stake_tiers_cents": [100, 300, 500, 1000, 2000]
