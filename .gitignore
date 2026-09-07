@@ -20,6 +20,14 @@ app/android/.cxx/
 !debug.keystore
 app/ios/Pods/
 
+# ── Unity-as-a-Library export ────────────────────────────────────────────────
+# 5.2GB of generated IL2CPP output. Regenerate with:
+#   Unity.exe -quit -batchmode -nographics -projectPath unity \n#     -executeMethod SkillApp.EditorTools.AndroidBuild.ExportAndroidLibrary
+# Leading slash-free pattern so it matches at ANY depth: the earlier
+# "unity/[Bb]uilds/" was anchored to the repo root and silently missed this.
+**/unity/builds/
+app/unity/
+
 # ── Unity ──
 unity/[Ll]ibrary/
 unity/[Tt]emp/
