@@ -22,7 +22,7 @@ choosing it; this was developed on a Windows machine with no access to macOS/Xco
 | `firebase-functions` | `^5.0.0` | _tbd_ |
 | `firebase-admin` | `^12.0.0` | _tbd_ |
 | `pg` | `^8.20.0` | _tbd_ |
-| Unity-as-a-Library embed | _(deliberately unpinned by the brief)_ | _tbd — recorded here once the spike is green_ |
+| Unity-as-a-Library embed | _(deliberately unpinned by the brief)_ | `@azesmway/react-native-unity@1.1.1` |
 
 Supporting toolchain: JDK 17 (Android Studio JBR 17.0.6), Android SDK platform 36 +
 build-tools 36.0.0, NDK from Unity's bundled Android module.
