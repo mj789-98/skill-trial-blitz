@@ -311,6 +311,181 @@ namespace SkillApp.ChickenRun.Sim
         }
 
         // ── The simulation ──────────────────────────────────────────────────
+        //
+        // Exposed as a STEPPING state machine, not only a batch replay.
+        //
+        // The client advances the world one tick at a time as the player plays;
+        // the server replays a finished trace in one go. Same rules, so they must
+        // not be two implementations — a second stepper is exactly the drift the
+        // parity harness exists to catch. Simulate() is a thin loop over Step(),
+        // and the game drives Step() directly.
+
+        /// <summary>
+        /// Run state. The only thing in the game that accumulates.
+        ///
+        /// A class rather than a struct so the renderer can hold a reference and
+        /// read it as it changes, instead of copying it every frame.
+        /// </summary>
+        public class State
+        {
+            public uint Seed;
+            public int Tick;
+            public int Row;
+            public int ColSub;
+            public int FurthestRow;
+            public int LastAdvanceTick;
+            public int LastInputTick;
+            public string Reason;
+        }
+
+        public static State CreateState(uint seed) => new State
+        {
+            Seed = seed,
+            Tick = 0,
+            Row = 0,
+            ColSub = (Cols / 2) * Sub,
+            FurthestRow = 0,
+            LastAdvanceTick = 0,
+            LastInputTick = -HopCooldownTicks,
+            Reason = null,
+        };
+
+        public static State CreateState(string seed) => CreateState(ParseSeed(seed));
+
+        /// <summary>
+        /// Advance exactly one tick.
+        ///
+        /// `actions` are the inputs issued ON this tick, in order. Inputs refused
+        /// by the cooldown are still consumed: the client records every input it
+        /// sends and the server must reject the same ones, or the two diverge.
+        ///
+        /// Returns the end reason if the run finished on this tick, else null.
+        ///
+        /// When a run ends, Tick is deliberately NOT advanced, so State.Tick is
+        /// the tick it ended on. The batch replay depends on that, and so does the
+        /// heartbeat the client reports.
+        /// </summary>
+        public static string Step(State s, IReadOnlyList<byte> actions)
+        {
+            if (s.Reason != null) return s.Reason;
+
+            // ── 1. Inputs ────────────────────────────────────────────────────
+            if (actions != null)
+            {
+                for (int i = 0; i < actions.Count; i++)
+                {
+                    byte action = actions[i];
+
+                    if (s.Tick - s.LastInputTick < HopCooldownTicks) continue;
+                    s.LastInputTick = s.Tick;
+
+                    if (action == ActCashOut)
+                    {
+                        s.Reason = EndCashOut;
+                        return s.Reason;
+                    }
+
+                    int col = FloorDiv(s.ColSub, Sub);
+                    int nextRow = s.Row;
+                    int nextCol = col;
+
+                    if (action == ActForward) nextRow = s.Row + 1;
+                    else if (action == ActBack) nextRow = s.Row - 1;
+                    else if (action == ActLeft) nextCol = col - 1;
+                    else if (action == ActRight) nextCol = col + 1;
+
+                    if (nextCol < 0 || nextCol >= Cols || nextRow < 0) continue;
+
+                    if (RowTypeAt(s.Seed, nextRow) == RowGrass &&
+                        (GrassObstacleMask(s.Seed, nextRow) & (1 << nextCol)) != 0)
+                    {
+                        continue;
+                    }
+
+                    s.Row = nextRow;
+                    s.ColSub = nextCol * Sub;
+
+                    // Score is the furthest row REACHED, so retreating to dodge
+                    // costs nothing. Only forward progress resets the idle line.
+                    if (s.Row > s.FurthestRow)
+                    {
+                        s.FurthestRow = s.Row;
+                        s.LastAdvanceTick = s.Tick;
+                    }
+                }
+            }
+
+            // ── 2. Carried by a log ──────────────────────────────────────────
+            int kind = RowTypeAt(s.Seed, s.Row);
+            if (kind == RowRiver)
+            {
+                var lane = LaneTraffic(s.Seed, s.Row, RowRiver);
+                if (LogUnder(lane, s.ColSub, s.Tick) < 0)
+                {
+                    s.Reason = EndDeath;
+                    return s.Reason;
+                }
+
+                s.ColSub += lane.Dir * lane.Speed;
+                if (s.ColSub < 0 || s.ColSub >= TrackSub)
+                {
+                    s.Reason = EndDeath;
+                    return s.Reason;
+                }
+            }
+
+            // ── 3. Hazards ───────────────────────────────────────────────────
+            if (kind == RowRoad)
+            {
+                if (VehicleUnder(LaneTraffic(s.Seed, s.Row, RowRoad), s.ColSub, s.Tick))
+                {
+                    s.Reason = EndDeath;
+                    return s.Reason;
+                }
+            }
+            else if (kind == RowRail)
+            {
+                if (TrainPresent(RailSchedule(s.Seed, s.Row), s.Tick))
+                {
+                    s.Reason = EndDeath;
+                    return s.Reason;
+                }
+            }
+
+            // ── 4. The idle line ─────────────────────────────────────────────
+            if (s.Tick - s.LastAdvanceTick > IdleGraceTicks)
+            {
+                int advanced = (s.Tick - s.LastAdvanceTick - IdleGraceTicks) / IdleStepTicks;
+                int lineRow = s.FurthestRow - IdleLeadRows + advanced;
+                if (s.Row <= lineRow)
+                {
+                    s.Reason = EndIdle;
+                    return s.Reason;
+                }
+            }
+
+            s.Tick++;
+            return null;
+        }
+
+        /// <summary>
+        /// Which row the advancing kill line occupies right now.
+        ///
+        /// Exposed so the renderer draws the shadow band exactly where the
+        /// simulation will kill. The idle rule is made visible in-game rather than
+        /// being a hidden countdown, and a band drawn anywhere else would be a lie.
+        /// </summary>
+        public static int IdleLineRow(State s)
+        {
+            if (s.Tick - s.LastAdvanceTick <= IdleGraceTicks)
+                return s.FurthestRow - IdleLeadRows;
+
+            int advanced = (s.Tick - s.LastAdvanceTick - IdleGraceTicks) / IdleStepTicks;
+            return s.FurthestRow - IdleLeadRows + advanced;
+        }
+
+        /// <summary>The score a run would bank if it ended now. Zero unless cashed out.</summary>
+        public static int ScoreFor(State s) => s.Reason == EndCashOut ? s.FurthestRow : 0;
 
         public struct Result
         {
@@ -324,19 +499,10 @@ namespace SkillApp.ChickenRun.Sim
         public static Result Simulate(string seed, string traceB64) =>
             Simulate(ParseSeed(seed), DecodeTrace(traceB64));
 
-        /// <summary>
-        /// Replay a run. Mirrors simulate() in the JS, step for step.
-        /// </summary>
+        /// <summary>Replay a finished run. Mirrors simulate() in the JS.</summary>
         public static Result Simulate(uint seed, List<InputEvent> events)
         {
-            int row = 0;
-            int colSub = (Cols / 2) * Sub;
-            int furthestRow = 0;
-            int lastAdvanceTick = 0;
-            int lastInputTick = -HopCooldownTicks;
-
-            string reason = null;
-            int tick = 0;
+            var s = CreateState(seed);
 
             int lastEventTick = events.Count > 0 ? events[events.Count - 1].Tick : 0;
             // Run slightly past the last input so a hop into traffic still
@@ -344,98 +510,34 @@ namespace SkillApp.ChickenRun.Sim
             int endTick = Math.Min(lastEventTick + HopCooldownTicks, MaxTicks);
 
             int ei = 0;
+            var actions = new List<byte>(4);
 
-            for (tick = 0; tick <= endTick; tick++)
+            while (s.Tick <= endTick && s.Reason == null)
             {
-                // 1. Inputs for this tick.
-                while (ei < events.Count && events[ei].Tick == tick)
+                actions.Clear();
+                while (ei < events.Count && events[ei].Tick == s.Tick)
                 {
-                    byte action = events[ei].Action;
+                    actions.Add(events[ei].Action);
                     ei++;
-
-                    if (tick - lastInputTick < HopCooldownTicks) continue;
-                    lastInputTick = tick;
-
-                    if (action == ActCashOut) { reason = EndCashOut; break; }
-
-                    int col = FloorDiv(colSub, Sub);
-                    int nextRow = row;
-                    int nextCol = col;
-
-                    if (action == ActForward) nextRow = row + 1;
-                    else if (action == ActBack) nextRow = row - 1;
-                    else if (action == ActLeft) nextCol = col - 1;
-                    else if (action == ActRight) nextCol = col + 1;
-
-                    if (nextCol < 0 || nextCol >= Cols || nextRow < 0) continue;
-
-                    if (RowTypeAt(seed, nextRow) == RowGrass &&
-                        (GrassObstacleMask(seed, nextRow) & (1 << nextCol)) != 0)
-                    {
-                        continue;
-                    }
-
-                    row = nextRow;
-                    colSub = nextCol * Sub;
-
-                    // Score is the furthest row REACHED, so retreating to dodge
-                    // costs nothing. Only forward progress resets the idle line.
-                    if (row > furthestRow)
-                    {
-                        furthestRow = row;
-                        lastAdvanceTick = tick;
-                    }
                 }
-                if (reason != null) break;
-
-                // 2. Carried by a log.
-                int kind = RowTypeAt(seed, row);
-                if (kind == RowRiver)
-                {
-                    var lane = LaneTraffic(seed, row, RowRiver);
-                    if (LogUnder(lane, colSub, tick) < 0) { reason = EndDeath; break; }
-
-                    colSub += lane.Dir * lane.Speed;
-                    if (colSub < 0 || colSub >= TrackSub) { reason = EndDeath; break; }
-                }
-
-                // 3. Hazards.
-                if (kind == RowRoad)
-                {
-                    if (VehicleUnder(LaneTraffic(seed, row, RowRoad), colSub, tick))
-                    {
-                        reason = EndDeath;
-                        break;
-                    }
-                }
-                else if (kind == RowRail)
-                {
-                    if (TrainPresent(RailSchedule(seed, row), tick)) { reason = EndDeath; break; }
-                }
-
-                // 4. The idle line.
-                if (tick - lastAdvanceTick > IdleGraceTicks)
-                {
-                    int advanced = (tick - lastAdvanceTick - IdleGraceTicks) / IdleStepTicks;
-                    int lineRow = furthestRow - IdleLeadRows + advanced;
-                    if (row <= lineRow) { reason = EndIdle; break; }
-                }
+                Step(s, actions);
             }
 
             // A trace that simply stops is an abandoned run, NOT a cash-out.
             // Banking has to be deliberate: if silence banked a score, killing the
             // app would be a risk-free exit.
-            if (reason == null) reason = EndAborted;
+            string reason = s.Reason ?? EndAborted;
 
             return new Result
             {
-                Score = reason == EndCashOut ? furthestRow : 0,
+                Score = reason == EndCashOut ? s.FurthestRow : 0,
                 Reason = reason,
-                Ticks = tick,
-                FurthestRow = furthestRow,
+                Ticks = s.Tick,
+                FurthestRow = s.FurthestRow,
                 Inputs = events.Count,
             };
         }
+
 
         public static int LogUnder(Lane lane, int colSub, int tick)
         {

@@ -337,9 +337,158 @@ function decodeTrace(b64) {
 }
 
 // ── The simulation ──────────────────────────────────────────────────────────
+//
+// Exposed as a STEPPING state machine rather than only a batch replay.
+//
+// The client has to advance the world one tick at a time as the player plays,
+// while the server replays a finished trace in one go. Those are the same rules,
+// so they must not be two implementations — a second stepper is exactly the
+// drift the parity harness exists to catch. `simulate()` below is a thin loop
+// over `step()`, and the client drives `step()` directly.
+
+/** Fresh run state for a seed. The only thing in the game that accumulates. */
+function createState(seed) {
+  return {
+    seed: parseSeed(seed),
+    tick: 0,
+    row: 0,
+    colSub: Math.floor(COLS / 2) * SUB, // centre column
+    furthestRow: 0,
+    lastAdvanceTick: 0, // when the idle line was last pushed back
+    lastInputTick: -HOP_COOLDOWN_TICKS,
+    reason: null,
+  };
+}
 
 /**
- * Replay a run.
+ * Advance exactly one tick.
+ *
+ * `actions` are the inputs issued ON this tick, in order. Inputs refused by the
+ * cooldown are still consumed — the client records every input it sends, and the
+ * server must reject the same ones, or the two would diverge.
+ *
+ * Returns the end reason if the run finished on this tick, else null.
+ *
+ * NOTE: when a run ends, `tick` is deliberately NOT advanced, so `state.tick` is
+ * the tick the run ended on. The batch replay depends on that, and so does the
+ * heartbeat the client reports.
+ */
+function step(state, actions) {
+  if (state.reason) return state.reason;
+
+  // ── 1. Inputs ─────────────────────────────────────────────────────────────
+  for (let i = 0; i < actions.length; i++) {
+    const action = actions[i];
+
+    if (state.tick - state.lastInputTick < HOP_COOLDOWN_TICKS) continue; // rate limited
+    state.lastInputTick = state.tick;
+
+    if (action === ACT_CASH_OUT) {
+      state.reason = END_CASH_OUT;
+      return state.reason;
+    }
+
+    const col = Math.floor(state.colSub / SUB);
+    let nextRow = state.row;
+    let nextCol = col;
+
+    if (action === ACT_FORWARD) nextRow = state.row + 1;
+    else if (action === ACT_BACK) nextRow = state.row - 1;
+    else if (action === ACT_LEFT) nextCol = col - 1;
+    else if (action === ACT_RIGHT) nextCol = col + 1;
+
+    // Off the board sideways, or behind the start: refuse, do not kill.
+    if (nextCol < 0 || nextCol >= COLS || nextRow < 0) continue;
+
+    // Terrain blocks the hop rather than killing.
+    if (
+      rowTypeAt(state.seed, nextRow) === ROW_GRASS &&
+      (grassObstacleMask(state.seed, nextRow) & (1 << nextCol)) !== 0
+    ) {
+      continue;
+    }
+
+    state.row = nextRow;
+    state.colSub = nextCol * SUB;
+
+    // Score is furthest row REACHED, so retreating to dodge never costs points.
+    // Only forward progress resets the idle line — otherwise a player could hop
+    // side to side forever and never be pushed.
+    if (state.row > state.furthestRow) {
+      state.furthestRow = state.row;
+      state.lastAdvanceTick = state.tick;
+    }
+  }
+
+  // ── 2. Being carried by a log ─────────────────────────────────────────────
+  const kind = rowTypeAt(state.seed, state.row);
+  if (kind === ROW_RIVER) {
+    const lane = laneTraffic(state.seed, state.row, ROW_RIVER);
+    if (logUnder(lane, state.colSub, state.tick) < 0) {
+      state.reason = END_DEATH; // fell in the water
+      return state.reason;
+    }
+    state.colSub += lane.dir * lane.speed;
+    if (state.colSub < 0 || state.colSub >= TRACK_SUB) {
+      state.reason = END_DEATH; // carried off the edge of the world
+      return state.reason;
+    }
+  }
+
+  // ── 3. Hazards ────────────────────────────────────────────────────────────
+  if (kind === ROW_ROAD) {
+    const lane = laneTraffic(state.seed, state.row, ROW_ROAD);
+    if (vehicleUnder(lane, state.colSub, state.tick)) {
+      state.reason = END_DEATH;
+      return state.reason;
+    }
+  } else if (kind === ROW_RAIL) {
+    if (trainPresent(railSchedule(state.seed, state.row), state.tick)) {
+      state.reason = END_DEATH;
+      return state.reason;
+    }
+  }
+
+  // ── 4. The idle line ──────────────────────────────────────────────────────
+  if (state.tick - state.lastAdvanceTick > IDLE_GRACE_TICKS) {
+    const advanced = Math.floor(
+      (state.tick - state.lastAdvanceTick - IDLE_GRACE_TICKS) / IDLE_STEP_TICKS
+    );
+    const lineRow = state.furthestRow - IDLE_LEAD_ROWS + advanced;
+    if (state.row <= lineRow) {
+      state.reason = END_IDLE;
+      return state.reason;
+    }
+  }
+
+  state.tick++;
+  return null;
+}
+
+/**
+ * Which row the advancing kill line occupies at a given tick.
+ *
+ * Exposed so the renderer draws the shadow band exactly where the simulation
+ * will kill — the idle rule is made visible in-game rather than being a hidden
+ * countdown, and a band drawn anywhere else would be a lie.
+ */
+function idleLineRow(state) {
+  if (state.tick - state.lastAdvanceTick <= IDLE_GRACE_TICKS) {
+    return state.furthestRow - IDLE_LEAD_ROWS;
+  }
+  const advanced = Math.floor(
+    (state.tick - state.lastAdvanceTick - IDLE_GRACE_TICKS) / IDLE_STEP_TICKS
+  );
+  return state.furthestRow - IDLE_LEAD_ROWS + advanced;
+}
+
+/** The score a run would bank if it ended right now. Zero unless cashed out. */
+function scoreFor(state) {
+  return state.reason === END_CASH_OUT ? state.furthestRow : 0;
+}
+
+/**
+ * Replay a finished run.
  *
  * @param {string|number} seed  The seed the SERVER issued for this round.
  * @param {string} traceB64     The client's input trace.
@@ -349,18 +498,8 @@ function decodeTrace(b64) {
  * }}
  */
 function simulate(seed, traceB64) {
-  const seedUint32 = parseSeed(seed);
   const events = decodeTrace(traceB64);
-
-  // Chicken state. This is the only thing that accumulates.
-  let row = 0;
-  let colSub = Math.floor(COLS / 2) * SUB; // centre column
-  let furthestRow = 0;
-  let lastAdvanceTick = 0; // when the idle line was last pushed back
-  let lastInputTick = -HOP_COOLDOWN_TICKS;
-
-  let reason = null;
-  let tick = 0;
+  const state = createState(seed);
 
   const lastEventTick = events.length ? events[events.length - 1].tick : 0;
   // Simulate a moment past the final input so a hop into traffic still resolves:
@@ -369,110 +508,33 @@ function simulate(seed, traceB64) {
   const endTick = Math.min(lastEventTick + HOP_COOLDOWN_TICKS, MAX_TICKS);
 
   let ei = 0;
+  const actions = [];
 
-  for (tick = 0; tick <= endTick; tick++) {
-    // ── 1. Apply this tick's inputs ────────────────────────────────────────
-    while (ei < events.length && events[ei].tick === tick) {
-      const action = events[ei].action;
+  while (state.tick <= endTick && !state.reason) {
+    actions.length = 0;
+    while (ei < events.length && events[ei].tick === state.tick) {
+      actions.push(events[ei].action);
       ei++;
-
-      if (tick - lastInputTick < HOP_COOLDOWN_TICKS) continue; // rate limited
-      lastInputTick = tick;
-
-      if (action === ACT_CASH_OUT) {
-        reason = END_CASH_OUT;
-        break;
-      }
-
-      const col = Math.floor(colSub / SUB);
-      let nextRow = row;
-      let nextCol = col;
-
-      if (action === ACT_FORWARD) nextRow = row + 1;
-      else if (action === ACT_BACK) nextRow = row - 1;
-      else if (action === ACT_LEFT) nextCol = col - 1;
-      else if (action === ACT_RIGHT) nextCol = col + 1;
-
-      // Off the board sideways, or behind the start: refuse, do not kill.
-      if (nextCol < 0 || nextCol >= COLS || nextRow < 0) continue;
-
-      // Terrain blocks the hop rather than killing.
-      if (
-        rowTypeAt(seedUint32, nextRow) === ROW_GRASS &&
-        (grassObstacleMask(seedUint32, nextRow) & (1 << nextCol)) !== 0
-      ) {
-        continue;
-      }
-
-      row = nextRow;
-      colSub = nextCol * SUB;
-
-      // Score is furthest row REACHED, so retreating to dodge never costs
-      // points. Only forward progress resets the idle line — otherwise a player
-      // could hop side to side forever and never be pushed.
-      if (row > furthestRow) {
-        furthestRow = row;
-        lastAdvanceTick = tick;
-      }
     }
-    if (reason) break;
-
-    // ── 2. Being carried by a log ──────────────────────────────────────────
-    const kind = rowTypeAt(seedUint32, row);
-    if (kind === ROW_RIVER) {
-      const lane = laneTraffic(seedUint32, row, ROW_RIVER);
-      const onLog = logUnder(lane, colSub, tick);
-      if (onLog < 0) {
-        reason = END_DEATH; // fell in the water
-        break;
-      }
-      colSub += lane.dir * lane.speed;
-      if (colSub < 0 || colSub >= TRACK_SUB) {
-        reason = END_DEATH; // carried off the edge of the world
-        break;
-      }
-    }
-
-    // ── 3. Hazards ─────────────────────────────────────────────────────────
-    if (kind === ROW_ROAD) {
-      const lane = laneTraffic(seedUint32, row, ROW_ROAD);
-      if (vehicleUnder(lane, colSub, tick)) {
-        reason = END_DEATH;
-        break;
-      }
-    } else if (kind === ROW_RAIL) {
-      if (trainPresent(railSchedule(seedUint32, row), tick)) {
-        reason = END_DEATH;
-        break;
-      }
-    }
-
-    // ── 4. The idle line ───────────────────────────────────────────────────
-    if (tick - lastAdvanceTick > IDLE_GRACE_TICKS) {
-      const advanced = Math.floor((tick - lastAdvanceTick - IDLE_GRACE_TICKS) / IDLE_STEP_TICKS);
-      const lineRow = furthestRow - IDLE_LEAD_ROWS + advanced;
-      if (row <= lineRow) {
-        reason = END_IDLE;
-        break;
-      }
-    }
+    step(state, actions);
   }
 
   // A trace that simply stops without cashing out is an abandoned run. It is
   // NOT a cash-out: banking is a deliberate act, and letting silence bank a
   // score would hand the player a risk-free exit.
-  if (!reason) reason = END_ABORTED;
+  const reason = state.reason || END_ABORTED;
 
   return {
     // The rule from the brief: you score 0 if you die. Only a deliberate
     // cash-out banks anything.
-    score: reason === END_CASH_OUT ? furthestRow : 0,
+    score: reason === END_CASH_OUT ? state.furthestRow : 0,
     reason,
-    ticks: tick,
-    furthestRow,
+    ticks: state.tick,
+    furthestRow: state.furthestRow,
     inputs: events.length,
   };
 }
+
 
 /** Index of the log under `colSub` at `tick`, or -1 if there is only water. */
 function logUnder(lane, colSub, tick) {
@@ -536,4 +598,11 @@ module.exports = {
   encodeTrace,
   decodeTrace,
   simulate,
+
+  // stepping interface — the client drives these directly, so live play and
+  // server replay run the same code rather than two implementations.
+  createState,
+  step,
+  idleLineRow,
+  scoreFor,
 };
