@@ -1,0 +1,45 @@
+# ── Reference material supplied with the brief (not ours to redistribute, 175MB) ──
+TSTrial/
+.write_test
+
+# ── Node ──
+node_modules/
+npm-debug.log*
+yarn-error.log*
+.env
+.env.*
+!.env.example
+
+# ── React Native / Android ──
+app/android/.gradle/
+app/android/app/build/
+app/android/build/
+app/android/local.properties
+app/android/.cxx/
+*.keystore
+!debug.keystore
+app/ios/Pods/
+
+# ── Unity ──
+unity/[Ll]ibrary/
+unity/[Tt]emp/
+unity/[Oo]bj/
+unity/[Bb]uild/
+unity/[Bb]uilds/
+unity/[Ll]ogs/
+unity/[Uu]ser[Ss]ettings/
+unity/[Mm]emoryCaptures/
+unity/*.csproj
+unity/*.sln
+unity/*.user
+
+# ── Firebase ──
+functions/.runtimeconfig.json
+.firebase/
+firebase-debug.log
+
+# ── OS / editor ──
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
