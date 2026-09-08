@@ -24,6 +24,7 @@ const { createQuote } = require('../blitz/quote');
 const { enterRound } = require('../blitz/enter');
 const { recordHeartbeat } = require('../blitz/heartbeat');
 const { submitRound } = require('../blitz/submit');
+const { sweepStaleRounds } = require('../blitz/sweep');
 
 /**
  * Fixed traces, replayed by the submit tests.
@@ -546,4 +547,190 @@ dbTest('the ledger reconciles after full quote -> enter -> submit cycles', async
     });
   }
   assert.deepEqual(await transaction((c) => ledger.reconcile(c)), []);
+});
+
+// ── sweep ───────────────────────────────────────────────────────────────────
+
+/** Drag a round's deadline into the past so the sweeper will pick it up. */
+async function expire(roundId) {
+  await query(
+    "update blitz_rounds set deadline_at = now() - interval '1 second' where round_id = $1",
+    [roundId]
+  );
+}
+
+dbTest('an abandoned round is settled at the acknowledged score', async () => {
+  // The app was killed mid-round. The stake is already gone; something has to
+  // decide the outcome, or the money silently disappears.
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+
+  await recordHeartbeat({ playerId: PLAYER, roundId: r.roundId, score: 5, tick: 600 });
+  await expire(r.roundId);
+
+  const out = await sweepStaleRounds();
+  const mine = out.results.find((x) => x.roundId === r.roundId);
+
+  assert.equal(mine.skipped, false);
+  assert.equal(mine.score, 5, 'did not settle at the acknowledged heartbeat');
+  assert.equal(mine.settleReason, 'sweep');
+
+  const { rows } = await query(
+    'select status, settle_reason from blitz_rounds where round_id = $1', [r.roundId]
+  );
+  assert.equal(rows[0].status, 'settled');
+  assert.equal(rows[0].settle_reason, 'sweep');
+});
+
+dbTest('a round still inside its deadline is left alone', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+
+  await sweepStaleRounds();
+
+  const { rows } = await query(
+    'select status from blitz_rounds where round_id = $1', [r.roundId]
+  );
+  assert.equal(rows[0].status, 'active', 'the sweeper settled a live round');
+});
+
+dbTest('sweeping twice pays once', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await recordHeartbeat({ playerId: PLAYER, roundId: r.roundId, score: 5, tick: 600 });
+  await expire(r.roundId);
+
+  await sweepStaleRounds();
+  const balanceAfterFirst = await transaction((c) => ledger.balance(c, PLAYER));
+
+  const second = await sweepStaleRounds();
+  assert.equal(
+    second.results.filter((x) => x.roundId === r.roundId && !x.skipped).length, 0,
+    'the second sweep settled an already-settled round'
+  );
+  assert.equal(await transaction((c) => ledger.balance(c, PLAYER)), balanceAfterFirst);
+
+  const { rows } = await query(
+    "select count(*)::int as n from ledger_entries where kind = 'payout' and round_id = $1",
+    [r.roundId]
+  );
+  assert.equal(rows[0].n, 1);
+});
+
+dbTest('a submit RACING the sweeper produces exactly one payout', async () => {
+  // The genuine race the design has to survive: the player's app reconnects and
+  // submits at the same instant the scheduled sweeper fires. Two independent
+  // processes, both entitled to settle the round.
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await pinSeed(r.roundId);
+  await recordHeartbeat({ playerId: PLAYER, roundId: r.roundId, score: 2, tick: 300 });
+  await expire(r.roundId);
+
+  const [submitted, swept] = await Promise.all([
+    submitRound({
+      playerId: PLAYER, roundId: r.roundId, claimedScore: GOOD.score, trace: GOOD.trace,
+    }).catch((e) => ({ error: e.code || e.message })),
+    sweepStaleRounds().catch((e) => ({ error: e.code || e.message })),
+  ]);
+
+  assert.ok(!submitted.error, `submit errored: ${submitted.error}`);
+  assert.ok(!swept.error, `sweep errored: ${swept.error}`);
+
+  // Exactly one payout row, whichever of them got there first.
+  const { rows } = await query(
+    "select count(*)::int as n from ledger_entries where kind = 'payout' and round_id = $1",
+    [r.roundId]
+  );
+  assert.equal(rows[0].n, 1, 'the race produced more than one payout');
+
+  const st = await query(
+    'select status, settle_reason from blitz_rounds where round_id = $1', [r.roundId]
+  );
+  assert.equal(st.rows[0].status, 'settled');
+  // Either is a legitimate winner; what matters is that only one paid.
+  assert.ok(['submit', 'sweep'].includes(st.rows[0].settle_reason));
+
+  assert.deepEqual(await transaction((c) => ledger.reconcile(c)), []);
+});
+
+dbTest('a round abandoned before scoring settles at zero, not in limbo', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await expire(r.roundId); // never a single heartbeat
+
+  const out = await sweepStaleRounds();
+  const mine = out.results.find((x) => x.roundId === r.roundId);
+
+  assert.equal(mine.score, 0);
+  assert.equal(mine.payoutCents, 0);
+
+  // The money did not vanish: there is a stake row AND a payout row to point at.
+  const { rows } = await query(
+    `select kind, amount_cents from ledger_entries
+      where round_id = $1 order by entry_id`, [r.roundId]
+  );
+  assert.equal(rows.length, 2);
+  assert.equal(rows[0].kind, 'stake');
+  assert.equal(Number(rows[0].amount_cents), -300);
+  assert.equal(rows[1].kind, 'payout');
+  assert.equal(Number(rows[1].amount_cents), 0);
+});
+
+dbTest('the sweeper cannot pay above what elapsed time allows', async () => {
+  // Defence in depth: even if a heartbeat were written by an older build, or
+  // straight into the table, settlement re-applies the physical bound.
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+
+  // Write an absurd heartbeat directly, bypassing the clamp in heartbeat.js.
+  await query(
+    'update blitz_rounds set heartbeat_score = 999999 where round_id = $1', [r.roundId]
+  );
+  await expire(r.roundId);
+
+  const out = await sweepStaleRounds();
+  const mine = out.results.find((x) => x.roundId === r.roundId);
+  assert.ok(mine.score < 1000,
+    `the sweeper paid an implausible ${mine.score} on a seconds-old round`);
+});
+
+dbTest('one unsettleable round does not block the rest of the batch', async () => {
+  await reset(3000);
+  await graduate();
+  const ids = [];
+  for (let i = 0; i < 3; i++) {
+    const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+    const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+    await recordHeartbeat({ playerId: PLAYER, roundId: r.roundId, score: 2, tick: 300 });
+    await expire(r.roundId);
+    ids.push(r.roundId);
+  }
+
+  // Point the middle round at a game with no validator and no config, so its
+  // settlement path fails.
+  await query("update blitz_rounds set game_id = 'pop_shot' where round_id = $1", [ids[1]]);
+
+  const out = await sweepStaleRounds();
+
+  const settled = await query(
+    `select round_id, status from blitz_rounds where round_id = any($1::uuid[])`, [ids]
+  );
+  const byId = Object.fromEntries(settled.rows.map((x) => [x.round_id, x.status]));
+
+  assert.equal(byId[ids[0]], 'settled', 'a healthy round was blocked by a broken sibling');
+  assert.equal(byId[ids[2]], 'settled', 'a healthy round was blocked by a broken sibling');
+  assert.ok(out.swept >= 2);
 });
