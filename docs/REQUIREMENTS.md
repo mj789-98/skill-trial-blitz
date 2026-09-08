@@ -15,7 +15,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 0.1 | Build a **solo** mode. Not async 1v1 matchmaking. | DONE (nothing built toward matchmaking) |
 | 0.2 | Not realtime netcode | N/A — explicitly out of scope |
 | 0.3 | Wager range $1–$20 per entry | DONE — tiers inside range |
-| 0.4 | **The game comes first.** Cut depth of other features, not the game | ⚠️ **currently violated** — backend/engine work ran ahead of a playable game |
+| 0.4 | **The game comes first.** Cut depth of other features, not the game | DONE — Chicken Run is playable end to end before the backend was wired |
 | 0.5 | Correctness beats apparent completeness | DONE — thin but tested |
 | 0.6 | Write down what was cut and why | TODO |
 
@@ -26,9 +26,9 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 1.1 | React Native — app UI | DONE |
 | 1.2 | Unity — games | DONE |
 | 1.3 | `azesmway/react-native-unity` to embed | DONE — 1.1.1, builds to APK |
-| 1.4 | Supabase (PostgreSQL) | **TODO — no project created; SQL never executed** |
-| 1.5 | Firebase Auth | **TODO — not started** |
-| 1.6 | Firebase Functions — the API | **TODO — no project, deps not installed** |
+| 1.4 | Supabase (PostgreSQL) | DONE — ap-south-1, PG 17.6, schema applied, all 24 integration tests pass against the transaction-mode pooler |
+| 1.5 | Firebase Auth | TODO — emulator configured (port 9099), no sign-in flow yet |
+| 1.6 | Firebase Functions — the API | DONE — runs on the emulator; Google Cloud project quota blocks a real project, and the brief does not require deployment |
 
 ### Pinned versions
 
@@ -39,10 +39,10 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | React | `19.2.3` | `19.2.3` | DONE |
 | TypeScript (app) | `^5.8.3` | `^5.8.3` | DONE |
 | Node — RN tooling | `>= 22.11.0` | `22.15.1` | DONE |
-| Node — Functions runtime | `20` | declared `"node": "20"` | PARTIAL — never run |
-| `firebase-functions` | `^5.0.0` | declared | PARTIAL — not installed |
-| `firebase-admin` | `^12.0.0` | declared | PARTIAL — not installed |
-| `pg` | `^8.20.0` | declared | PARTIAL — not installed |
+| Node — Functions runtime | `20` | declared; emulator warns it uses host node 22 | PARTIAL |
+| `firebase-functions` | `^5.0.0` | 5.1.1 installed | DONE |
+| `firebase-admin` | `^12.0.0` | 12.7.0 installed | DONE |
+| `pg` | `^8.20.0` | 8.23.0 installed | DONE |
 | Unity embed pkg | *(unpinned; record it)* | `1.1.1`, recorded in README | DONE |
 
 | # | Requirement | Status |
@@ -57,19 +57,19 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | # | Requirement | Status |
 |---|---|---|
 | 2.1 | Match reference screenshots for layout, dimension, orientation | TODO |
-| 2.2 | Tap to jump forward | PARTIAL — input written, never run |
-| 2.3 | Swipe to jump left / right / back | PARTIAL — same |
-| 2.4 | Hold **"Cash Out"** to quit and keep points | TODO — no UI |
+| 2.2 | Tap to jump forward | DONE — verified in a running build |
+| 2.3 | Swipe to jump left / right / back | DONE — untested on touch hardware |
+| 2.4 | Hold **"Cash Out"** to quit and keep points | DONE — 700ms hold with ring |
 | 2.5 | Score 0 if you die | DONE — in sim, tested |
 | 2.6 | Don't fall in the water | DONE — in sim |
 | 2.7 | Watch out for moving **cars** | DONE — in sim |
 | 2.8 | Watch out for **trains** | DONE — in sim |
-| 2.9 | Idle too long → game ends. **Decide threshold, state it, say why** | PARTIAL — ~6s implemented; not in DECISIONS.md |
+| 2.9 | Idle too long → game ends. **Decide threshold, state it, say why** | PARTIAL — 6.9s verified in a build; not yet in DECISIONS.md |
 | 2.10 | No time limit; ends on cash out, death, or idle | DONE |
 | 2.11 | Assets / prefabs | TODO |
 | 2.12 | Sound effects | TODO |
 | 2.13 | Haptics | TODO |
-| 2.14 | **Playable** — smooth, responsive, fun | **TODO — nothing renders yet** |
+| 2.14 | **Playable** — smooth, responsive, fun | PARTIAL — renders and plays; no device test, no audio/haptics |
 
 ## 3. Blitz — REQUIRED
 
@@ -77,12 +77,12 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 
 | # | Requirement | Status |
 |---|---|---|
-| 3A.1 | Pre-entry payout screen, per player per round | TODO — engine builds the curve; no screen |
-| 3A.2 | Entry fee taken, curve locked | TODO — designed in schema, no endpoint |
+| 3A.1 | Pre-entry payout screen, per player per round | PARTIAL — quote endpoint done; no RN screen yet |
+| 3A.2 | Entry fee taken, curve locked | DONE — enter debits and copies the curve onto the round |
 | 3A.3 | Round played, score produced | PARTIAL — sim only |
 | 3A.4 | Score validated | DONE — deterministic replay |
 | 3A.5 | Payout resolved against the **locked** curve | PARTIAL — curve.js done; no endpoint |
-| 3A.6 | Balance updated | TODO |
+| 3A.6 | Balance updated | PARTIAL — ledger done; settlement endpoint pending |
 | 3A.7 | Profile updated for next round | DONE — `advanceProfile` |
 
 ### 3B. Target engine
@@ -117,7 +117,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | # | Requirement | Status |
 |---|---|---|
 | 3.4.1 | Nothing touching money decided on the client | DONE by design |
-| 3.4.2 | Every balance change through a ledger | DONE — schema |
+| 3.4.2 | Every balance change through a ledger | DONE — ledger module, 10 integration tests |
 | 3.4.3 | Interrupted round → exactly one outcome, once | PARTIAL — schema + sweeper designed |
 | 3.4.4 | Handle disconnects, duplicate submits, app kills | PARTIAL — designed |
 | 3.4.5 | Curve shown pre-entry is the curve paid on | DONE — copied into the round row |
@@ -166,20 +166,20 @@ Only after Chicken Run **and** Blitz are finished and polished.
 |---|---|---|
 | 5.1 | No matchmaking, no rating | N/A |
 | 5.2 | An entry must never silently disappear with the money | PARTIAL — designed |
-| 5.3 | Raw **parameterised** SQL via `pg` | PARTIAL — schema written, no queries yet |
-| 5.4 | Use `query` / `transaction` from `db.js` | TODO |
+| 5.3 | Raw **parameterised** SQL via `pg` | DONE — every query parameterised, no concatenation |
+| 5.4 | Use `query` / `transaction` from `db.js` | DONE — unmodified |
 | 5.5 | **No ORM, no query builder, no Supabase client lib** | DONE — none installed |
 | 5.6 | Never build a query by string concatenation | DONE so far |
 | 5.7 | Money as **integer cents**, no floats | DONE — enforced in schema + curve |
 | 5.8 | Server is the only thing that moves a balance | DONE by design |
-| 5.9 | Debit the stake at **entry**, not settlement | PARTIAL — designed |
-| 5.10 | Submission + settlement **idempotent** | PARTIAL — `UNIQUE(idempotency_key)` |
-| 5.11 | Settlement **atomic** | PARTIAL — designed |
+| 5.9 | Debit the stake at **entry**, not settlement | DONE — enter.js, tested |
+| 5.10 | Submission + settlement **idempotent** | PARTIAL — entry proven idempotent under concurrency; submit pending |
+| 5.11 | Settlement **atomic** | PARTIAL — rollback proven; settle pending |
 | 5.12 | Append-only ledger of every movement | DONE — schema |
 | 5.13 | Threat model, written, concrete | PARTIAL — in code comments, not DECISIONS |
 | 5.14 | Implement ≥1 real server-side defence + what it does/doesn't catch | DONE — replay; holes listed in kickoff, not DECISIONS |
 | 5.15 | What you'd build next, roughly in order | PARTIAL — in kickoff, not DECISIONS |
-| 5.16 | Mock payment functions only | TODO |
+| 5.16 | Mock payment functions only | DONE — ledger.deposit / withdraw |
 
 ## 6. Deliverables
 
