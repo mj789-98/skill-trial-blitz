@@ -22,6 +22,19 @@ const { query, transaction, getPool } = require('../db');
 const ledger = require('../money/ledger');
 const { createQuote } = require('../blitz/quote');
 const { enterRound } = require('../blitz/enter');
+const { recordHeartbeat } = require('../blitz/heartbeat');
+const { submitRound } = require('../blitz/submit');
+
+/**
+ * Fixed traces, replayed by the submit tests.
+ *
+ * Both were produced by running the real simulation over seed 3 and recording
+ * what came out, so they are genuine legal traces rather than hand-written
+ * blobs. The tests pin each round onto that seed, since enter() issues a random
+ * one and a trace is only valid against the world it was played in.
+ */
+const GOOD = { seed: '3', trace: 'BgABBgABBgABBgABBgABBgABBgAF', score: 6 };
+const DEAD = { seed: '3', trace: 'BgABBgABBgABBgABBgABBgABBgABBgABBgABBgABBgABBgABBgABBgABBgAF', score: 0 };
 
 const PLAYER = 'blitz-itest';
 const GAME = 'chicken_run';
@@ -285,5 +298,252 @@ dbTest('the ledger still reconciles after the whole entry flow', async () => {
     await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
   }
   assert.equal(await transaction((c) => ledger.balance(c, PLAYER)), 1100);
+  assert.deepEqual(await transaction((c) => ledger.reconcile(c)), []);
+});
+
+// ── heartbeat ───────────────────────────────────────────────────────────────
+
+dbTest('a heartbeat only ever raises the stored score', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+
+  await recordHeartbeat({ playerId: PLAYER, roundId: r.roundId, score: 4, tick: 200 });
+  const back = await recordHeartbeat({ playerId: PLAYER, roundId: r.roundId, score: 2, tick: 300 });
+
+  assert.equal(back.accepted, false, 'a lower score was accepted');
+  const { rows } = await query(
+    'select heartbeat_score from blitz_rounds where round_id = $1', [r.roundId]
+  );
+  assert.equal(Number(rows[0].heartbeat_score), 4);
+});
+
+dbTest('an implausible heartbeat is CLAMPED to what elapsed time allows', async () => {
+  // The cheapest attack in the system: claim an enormous score, never submit,
+  // and let the sweeper pay it. The simulation refuses inputs faster than one
+  // per 120ms, so the server bounds the claim using its own clock.
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+
+  const hb = await recordHeartbeat({
+    playerId: PLAYER, roundId: r.roundId, score: 999999, tick: 10,
+  });
+
+  assert.equal(hb.clamped, true, 'an absurd score was stored unclamped');
+  assert.ok(hb.heartbeatScore < 100,
+    `clamp let through ${hb.heartbeatScore} on a brand new round`);
+});
+
+// ── submit ──────────────────────────────────────────────────────────────────
+
+/** Force a round onto the seed the known-good traces were built against. */
+async function pinSeed(roundId) {
+  await query('update blitz_rounds set seed = $2 where round_id = $1', [roundId, GOOD.seed]);
+}
+
+/** What the quoted curve says a score is worth — computed from the QUOTE. */
+function expectedPayout(quote, score) {
+  let bp = quote.curve[0].multBp;
+  for (const p of quote.curve) if (score >= p.score) bp = p.multBp;
+  // interpolate the same way the server does
+  for (let i = 1; i < quote.curve.length; i++) {
+    const hi = quote.curve[i], lo = quote.curve[i - 1];
+    if (score > lo.score && score < hi.score) {
+      const span = hi.score - lo.score;
+      bp = lo.multBp + Math.floor(((hi.multBp - lo.multBp) * (score - lo.score)) / span);
+    }
+  }
+  return Math.floor((quote.stakeCents * bp) / 10000);
+}
+
+dbTest('submit settles on the REPLAYED score, not the claimed one', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await pinSeed(r.roundId);
+
+  // The client lies, extravagantly.
+  const out = await submitRound({
+    playerId: PLAYER, roundId: r.roundId, claimedScore: 400, trace: GOOD.trace,
+  });
+
+  assert.equal(out.score, GOOD.score, 'the server trusted the client');
+  assert.equal(out.claimedScore, 400);
+  assert.equal(out.scoreMismatch, true);
+  assert.equal(out.endReason, 'cash_out');
+});
+
+dbTest('the payout uses the ROUND curve even after the config changes', async () => {
+  // The strongest statement of "paid on the curve you were shown": enter, then
+  // move the target engine underneath the player, then settle. The payout must
+  // be unchanged, because settlement can only reach blitz_rounds.curve.
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await pinSeed(r.roundId);
+
+  const expected = expectedPayout(q, GOOD.score);
+
+  const original = await query(
+    'select params from blitz_configs where game_id = $1 and is_active', [GAME]
+  );
+  // Wreck the live config and the profile AFTER entry.
+  await query(
+    `update blitz_configs
+        set params = jsonb_set(params, '{curve,cap_multiplier}', '0.1')
+      where game_id = $1 and is_active`, [GAME]
+  );
+  await query(
+    'update blitz_profiles set target_score = 9999 where player_id = $1 and game_id = $2',
+    [PLAYER, GAME]
+  );
+
+  const out = await submitRound({
+    playerId: PLAYER, roundId: r.roundId, claimedScore: GOOD.score, trace: GOOD.trace,
+  });
+
+  await query(
+    'update blitz_configs set params = $2 where game_id = $1 and is_active',
+    [GAME, original.rows[0].params]
+  );
+
+  assert.equal(out.payoutCents, expected,
+    'the payout moved when the config did — the locked curve was not honoured');
+});
+
+dbTest('submitting twice pays once and returns the same result', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await pinSeed(r.roundId);
+
+  const first = await submitRound({
+    playerId: PLAYER, roundId: r.roundId, claimedScore: GOOD.score, trace: GOOD.trace,
+  });
+  const second = await submitRound({
+    playerId: PLAYER, roundId: r.roundId, claimedScore: GOOD.score, trace: GOOD.trace,
+  });
+
+  assert.equal(second.alreadySettled, true);
+  assert.equal(second.payoutCents, first.payoutCents);
+  assert.equal(second.balanceCents, first.balanceCents);
+
+  const { rows } = await query(
+    "select count(*)::int as n from ledger_entries where kind = 'payout' and round_id = $1",
+    [r.roundId]
+  );
+  assert.equal(rows[0].n, 1, 'paid out more than once');
+});
+
+dbTest('CONCURRENT submits settle exactly once', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await pinSeed(r.roundId);
+
+  const results = await Promise.all(
+    Array.from({ length: 6 }, () =>
+      submitRound({
+        playerId: PLAYER, roundId: r.roundId, claimedScore: GOOD.score, trace: GOOD.trace,
+      }).catch((e) => ({ error: e.code || e.message }))
+    )
+  );
+
+  const errors = results.filter((x) => x.error);
+  assert.equal(errors.length, 0, `unexpected errors: ${JSON.stringify(errors)}`);
+
+  const payouts = new Set(results.map((x) => x.payoutCents));
+  assert.equal(payouts.size, 1, 'concurrent submits disagreed about the payout');
+
+  const { rows } = await query(
+    "select count(*)::int as n from ledger_entries where kind = 'payout' and round_id = $1",
+    [r.roundId]
+  );
+  assert.equal(rows[0].n, 1);
+});
+
+dbTest('a garbage trace settles at the acknowledged heartbeat, not the claim', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+
+  await recordHeartbeat({ playerId: PLAYER, roundId: r.roundId, score: 3, tick: 400 });
+
+  const out = await submitRound({
+    playerId: PLAYER, roundId: r.roundId, claimedScore: 500, trace: 'not-a-real-trace!!',
+  });
+
+  assert.equal(out.settleReason, 'invalid_trace');
+  assert.equal(out.score, 3, 'a garbage trace was paid on the claimed score');
+
+  // Exactly one outcome — the round is not left hanging for a client to retry.
+  const { rows } = await query(
+    'select status from blitz_rounds where round_id = $1', [r.roundId]
+  );
+  assert.equal(rows[0].status, 'settled');
+});
+
+dbTest('a losing run settles at zero and still writes a payout row', async () => {
+  await reset(1000);
+  await graduate();
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await pinSeed(r.roundId);
+
+  const out = await submitRound({
+    playerId: PLAYER, roundId: r.roundId, claimedScore: 0, trace: DEAD.trace,
+  });
+
+  assert.equal(out.score, 0, 'a death paid out a score');
+  assert.equal(out.payoutCents, 0);
+  assert.equal(out.netCents, -300);
+
+  // A loss must be auditable, and distinguishable from a round never settled.
+  const { rows } = await query(
+    "select count(*)::int as n from ledger_entries where kind = 'payout' and round_id = $1",
+    [r.roundId]
+  );
+  assert.equal(rows[0].n, 1, 'a loss left no auditable row');
+});
+
+dbTest('the profile ratchets on the VALIDATED score, not the claimed one', async () => {
+  await reset(1000);
+  await graduate([5, 5, 5, 5, 5]);
+  const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+  const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+  await pinSeed(r.roundId);
+
+  await submitRound({
+    playerId: PLAYER, roundId: r.roundId, claimedScore: 9999, trace: GOOD.trace,
+  });
+
+  const { rows } = await query(
+    'select recent_scores from blitz_profiles where player_id = $1 and game_id = $2',
+    [PLAYER, GAME]
+  );
+  const recent = rows[0].recent_scores.map(Number);
+  assert.equal(recent[0], GOOD.score, 'a claimed score entered the profile');
+  assert.ok(!recent.includes(9999));
+});
+
+dbTest('the ledger reconciles after full quote -> enter -> submit cycles', async () => {
+  await reset(2000);
+  await graduate();
+  for (let i = 0; i < 3; i++) {
+    const q = await createQuote({ playerId: PLAYER, gameId: GAME, stakeCents: 300 });
+    const r = await enterRound({ playerId: PLAYER, quoteId: q.quoteId });
+    await pinSeed(r.roundId);
+    await submitRound({
+      playerId: PLAYER, roundId: r.roundId, claimedScore: GOOD.score, trace: GOOD.trace,
+    });
+  }
   assert.deepEqual(await transaction((c) => ledger.reconcile(c)), []);
 });
