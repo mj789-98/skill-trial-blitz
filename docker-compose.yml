@@ -1,0 +1,31 @@
+# Local Postgres for development and integration tests.
+#
+# Supabase is the deployment target; this is what makes the money paths testable
+# without network round-trips or shared state, and it is what the integration
+# tests run against.
+#
+#   docker compose up -d
+#   npm --prefix functions run db:reset
+#
+# Version 17 is not arbitrary. The db.js supplied with the brief issues
+#   SET LOCAL transaction_timeout = '30s'
+# inside every transaction, and transaction_timeout is a PostgreSQL 17 feature.
+# On 15 or 16 that statement errors and every transaction fails, so testing
+# against an older Postgres would prove nothing about the code that ships.
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: skilltrial-pg
+    environment:
+      POSTGRES_PASSWORD: devpass
+      POSTGRES_DB: skilltrial
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d skilltrial"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    # No volume on purpose: a throwaway database that resets with the container
+    # is what you want for tests. Nothing here is worth persisting.
