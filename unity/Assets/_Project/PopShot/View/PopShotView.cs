@@ -42,6 +42,9 @@ namespace SkillApp.PopShot.View
         private GameObject _board;
         private GameObject _floor;
         private GameObject _target;
+        private GameObject _rim;
+        private GameObject _post;
+        private GameObject _arm;
 
         /// <summary>World units per sub-unit. The sim's court is 9x16 sub-thousands.</summary>
         private const float Scale = 1f / Sim.Sub;
@@ -52,9 +55,28 @@ namespace SkillApp.PopShot.View
             _root.SetParent(transform, false);
 
             _floor = Build("Floor", courtColor);
-            // The painted square every backboard has. The fastest way to make a
-            // white slab read as a backboard rather than a wall.
-            _target = Build("BoardTarget", new Color(0.88f, 0.30f, 0.24f));
+            // The ring itself, spanning the two posts.
+            //
+            // Without it the hoop is two small red squares with a gap between
+            // them, which reads as two markers rather than as a basket — the eye
+            // needs the bar to close the shape. Seen edge-on from a 2D camera a
+            // ring IS a bar, so this is both correct and free.
+            _rim = Build("Rim", rimColor);
+
+            // A stanchion, so the hoop is MOUNTED rather than floating.
+            //
+            // This replaces a painted target square on the backboard, which was
+            // a mistake I could only see once it was on screen: the camera looks
+            // straight down the court's depth axis, so the backboard is edge-on
+            // and its face — and anything painted on it — is invisible by
+            // construction. A square that cannot be seen is not detail, it is
+            // three wasted draw calls and one stray red stripe where a bar
+            // happened to catch the light.
+            //
+            // What the eye actually wanted was for the hoop to be attached to
+            // something.
+            _post = Build("Stanchion", new Color(0.42f, 0.45f, 0.52f));
+            _arm = Build("Arm", new Color(0.42f, 0.45f, 0.52f));
             _board = Build("Backboard", boardColor);
             _rimLeft = Build("RimLeft", rimColor);
             _rimRight = Build("RimRight", rimColor);
@@ -168,15 +190,16 @@ namespace SkillApp.PopShot.View
             _rimRight.transform.localScale = new Vector3(postD, postD, postD);
             _rimRight.transform.localPosition = new Vector3(hoopX + rimHalf, hoopY, 0f);
 
-            // The net is decoration, and deliberately BEHIND the ball in z so a
-            // ball dropping through is drawn in front of it. Nothing in the
-            // simulation knows it exists.
-            // Narrower than the rim and thin: a hanging net, not a shelf. The
-            // first version was as wide as the opening and read as a solid
-            // surface the ball ought to bounce off, which is a lie about the
-            // rules.
-            _net.transform.localScale = new Vector3(rimHalf * 1.5f, 0.5f, 0.04f);
-            _net.transform.localPosition = new Vector3(hoopX, hoopY - 0.28f, 0.35f);
+            // The ring, closing the gap between the posts.
+            _rim.transform.localScale = new Vector3(rimHalf * 2f + postD, postD * 0.72f, postD * 0.9f);
+            _rim.transform.localPosition = new Vector3(hoopX, hoopY, 0f);
+
+            // The net hangs FROM the ring, so its top edge meets the rim exactly.
+            // The first version floated a slab below the hoop with a visible gap,
+            // which read as an unrelated object.
+            const float netHeight = 0.55f;
+            _net.transform.localScale = new Vector3(rimHalf * 1.7f, netHeight, 0.04f);
+            _net.transform.localPosition = new Vector3(hoopX, hoopY - netHeight * 0.5f, 0.3f);
 
             float boardX = Sim.BoardX(state) * Scale;
             _board.transform.localScale =
@@ -184,9 +207,15 @@ namespace SkillApp.PopShot.View
             _board.transform.localPosition =
                 new Vector3(boardX, hoopY + Sim.BoardH * Scale * 0.5f, 0.1f);
 
-            _target.transform.localScale = new Vector3(0.09f, 0.95f, 0.06f);
-            _target.transform.localPosition =
-                new Vector3(boardX - 0.05f, hoopY + 0.60f, -0.26f);
+            // Stanchion: a pole from the floor up behind the backboard, and a
+            // short arm out to it. Two cubes, and the hoop stops floating.
+            float poleX = boardX + 0.55f;
+            float poleTop = hoopY + Sim.BoardH * Scale * 0.75f;
+            _post.transform.localScale = new Vector3(0.16f, poleTop, 0.16f);
+            _post.transform.localPosition = new Vector3(poleX, poleTop * 0.5f, 0.15f);
+
+            _arm.transform.localScale = new Vector3(0.62f, 0.12f, 0.12f);
+            _arm.transform.localPosition = new Vector3(boardX + 0.28f, hoopY + 0.35f, 0.12f);
         }
 
         private void LayoutBall(Sim.State state)
