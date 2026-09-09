@@ -151,7 +151,7 @@ are in DECISIONS D-018 and D-025.
 
 | # | Requirement | Status |
 |---|---|---|
-| 4.1 | 2D basketball | DONE — 2D basketball, one ball permanently in play |
+| 4.1 | 2D basketball | DONE — verified on device: a paid round played, settled and reconciled |
 | 4.2 | Portrait or landscape — your call, say why | DONE — portrait, DECISIONS D-022 |
 | 4.3 | Clock does not start until the first basket | DONE — clockRunning stays false until the first basket; tested |
 | 4.4 | Tap anywhere to lift the ball and shoot | DONE — tap anywhere, committed on press |
@@ -199,7 +199,7 @@ are in DECISIONS D-018 and D-025.
 | 6.10 | DECISIONS: score-trust threat model | DONE — D-015 |
 | 6.11 | DECISIONS: **where you leaned on AI, and where you deliberately did not** | DONE — D-020 |
 | 6.12 | **Screen recording on a real device**, showing each feature | TODO |
-| 6.13 | Runnable build — an **APK** | PARTIAL — debug APK of the spike only |
+| 6.13 | Runnable build — an **APK** | DONE — release APK, arm64, both games, installs and runs from a clean install |
 | 6.14 | Tuning harness + shipped config + the numbers behind it, committed | DONE — tools/sim, tuned-v1, docs/tuning-report.md |
 
 ## 7. Scoring weights
@@ -207,7 +207,7 @@ are in DECISIONS D-018 and D-025.
 | Weight | Dimension | Where we stand |
 |---|---|---|
 | 30% | Correctness & server authority | strong — full loop, 93 backend tests + 16 e2e checks, threat model written |
-| 25% | **Game feel** | two games with audio and haptics; Chicken Run verified on device, Pop Shot not yet |
+| 25% | **Game feel** | two games, audio + haptics, both verified on device; still no art assets |
 | 20% | Code quality & architecture | strong |
 | 15% | Product judgement & written reasoning | strong — 20 DECISIONS entries, with harness numbers behind the claims |
 | 10% | Polish & completeness | partial — no art assets, no recording, no release APK |
