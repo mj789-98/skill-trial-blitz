@@ -111,11 +111,35 @@ exports.ping = onCall(async () => {
  * toggle rather than something hard-wired to Chicken Run.
  */
 exports.listGames = onCall(async () => {
+  // The stake tiers come from the ACTIVE config, not from a constant in the app.
+  // The brief requires the target engine be retunable without a rebuild, and a
+  // client with its own copy of the tiers is a rebuild waiting to happen: change
+  // them in the database and the lobby would offer a stake the server refuses.
   const { rows } = await query(
-    `select game_id, display_name, blitz_enabled
-       from games where enabled order by sort_order`
+    `select g.game_id, g.display_name, g.blitz_enabled,
+            c.params -> 'stake_tiers_cents'      as stake_tiers_cents,
+            c.params -> 'bootstrap_max_stake_cents' as bootstrap_max_stake_cents
+       from games g
+       left join blitz_configs c
+         on c.game_id = g.game_id and c.is_active
+      where g.enabled
+      order by g.sort_order`
   );
-  return { games: rows };
+
+  return {
+    games: rows.map((r) => ({
+      game_id: r.game_id,
+      display_name: r.display_name,
+      // A game with Blitz on but no active config cannot be entered, so it is
+      // reported as disabled rather than as an offer that will fail at quote.
+      blitz_enabled: r.blitz_enabled && Array.isArray(r.stake_tiers_cents),
+      stakeTiersCents: Array.isArray(r.stake_tiers_cents)
+        ? r.stake_tiers_cents.map(Number)
+        : [],
+      bootstrapMaxStakeCents:
+        r.bootstrap_max_stake_cents === null ? null : Number(r.bootstrap_max_stake_cents),
+    })),
+  };
 });
 
 /** The signed-in player's balance and profile summary. */

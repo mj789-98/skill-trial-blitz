@@ -18,7 +18,16 @@ import type { GameId } from '../unity/protocol';
 export interface Game {
   game_id: GameId;
   display_name: string;
+  /** False when Blitz is off OR when no active config backs it. */
   blitz_enabled: boolean;
+  /**
+   * The entry amounts the server will accept, from the active config. Read from
+   * the server rather than held here so retuning the economics does not need an
+   * app rebuild — see the comment on listGames.
+   */
+  stakeTiersCents: number[];
+  /** The cap that applies while the target engine is still calibrating. */
+  bootstrapMaxStakeCents: number | null;
 }
 
 export interface BlitzProfileSummary {
