@@ -22,7 +22,7 @@ namespace SkillApp.ChickenRun
     /// where the feel actually gets tuned. It never happens in a build with a
     /// host, because the host sends START_ROUND first.
     /// </summary>
-    public class ChickenRunSession : MonoBehaviour
+    public class ChickenRunSession : MonoBehaviour, IGameSession
     {
         [SerializeField] private ChickenRunGame game;
         [SerializeField] private WorldView world;
@@ -51,22 +51,8 @@ namespace SkillApp.ChickenRun
         private int _lastReportedScore = -1;
         private bool _hostSpoke;
 
-        [Serializable]
-        private class InboundMessage
-        {
-            public string type;
-            public string gameId;
-            public string mode;
-            public string seed;
-            public string roundId;
-            public bool sound;
-            public bool music;
-            public bool haptics;
-        }
-
         private void OnEnable()
         {
-            RNBridge.MessageReceived += OnMessage;
             if (game != null)
             {
                 game.RunEnded += OnRunEnded;
@@ -76,7 +62,6 @@ namespace SkillApp.ChickenRun
 
         private void OnDisable()
         {
-            RNBridge.MessageReceived -= OnMessage;
             if (game != null)
             {
                 game.RunEnded -= OnRunEnded;
@@ -86,10 +71,9 @@ namespace SkillApp.ChickenRun
 
         private void Start()
         {
-            // Tell the host we can accept a round. If there is no host this is a
-            // log line and nothing more.
-            RNBridge.SendReady();
-
+            // READY is sent by GameHost, which is the thing that is always awake.
+            // A session can be switched off between rounds and must not be the
+            // component responsible for the handshake.
             if (autoplayWithoutHost)
             {
                 // Give the host a moment to speak first; only autoplay if it does
@@ -110,47 +94,33 @@ namespace SkillApp.ChickenRun
             BeginRun(seed.ToString(), roundId: null);
         }
 
-        private void OnMessage(string json)
+        // ── IGameSession ─────────────────────────────────────────────────
+
+        /// <summary>Start a round with a server-issued seed. Called by GameHost.</summary>
+        public void BeginRound(string seed, string roundId)
         {
-            InboundMessage msg;
-            try
-            {
-                msg = JsonUtility.FromJson<InboundMessage>(json);
-            }
-            catch (Exception e)
-            {
-                RNBridge.SendError($"malformed message: {e.Message}");
-                return;
-            }
-            if (msg == null || string.IsNullOrEmpty(msg.type)) return;
-
+            // Being called at all means React Native is driving. The run-end
+            // overlay uses this to decide whether to offer its own restart
+            // button, which under a host would be a second, conflicting way to
+            // start a round.
             _hostSpoke = true;
+            BeginRun(seed, roundId);
+        }
 
-            switch (msg.type)
-            {
-                case "START_ROUND":
-                    if (string.IsNullOrEmpty(msg.seed))
-                    {
-                        RNBridge.SendError("START_ROUND without a seed");
-                        return;
-                    }
-                    BeginRun(msg.seed, msg.roundId);
-                    break;
+        /// <summary>
+        /// The host is tearing the round down. Report where we got to so the
+        /// round can be settled rather than left hanging with the player's stake
+        /// already debited.
+        /// </summary>
+        public void AbortRound()
+        {
+            if (game != null && game.IsRunning) ReportEnd(Sim.EndAborted);
+        }
 
-                case "ABORT":
-                    // The host is tearing the round down. Report where we got to
-                    // so the round can be settled rather than left hanging with
-                    // the player's stake already debited.
-                    if (game != null && game.IsRunning) ReportEnd(Sim.EndAborted);
-                    break;
-
-                case "SET_AUDIO":
-                    // The host owns the player's sound and haptics preferences,
-                    // because that is where the settings UI lives. Unity does not
-                    // persist them; it is told, every time.
-                    feedback?.Configure(msg.sound, msg.haptics);
-                    break;
-            }
+        /// <summary>The player's sound and haptics preferences, from the host.</summary>
+        public void ConfigureFeedback(bool sound, bool haptics)
+        {
+            feedback?.Configure(sound, haptics);
         }
 
         private void BeginRun(string seed, string roundId)

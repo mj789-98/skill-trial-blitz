@@ -135,6 +135,28 @@ namespace SkillApp.EditorTools
                 ("cashOut", cashOut),
                 ("runEnd", runEnd));
 
+            // ── Two games, one scene ─────────────────────────────────────
+            // Everything Chicken Run owns goes under one root so GameHost can
+            // switch it off with a single SetActive. Scene loading would be the
+            // textbook answer and is avoided deliberately — see GameHost for why
+            // tearing down a render surface inside an embedded player is the one
+            // thing this build cannot survive.
+            var chickenRoot = new GameObject("Game_ChickenRun");
+            foreach (var go in new[] {
+                camGo, lightGo, gameGo, chickenGo, sessionGo, hud.gameObject, feedbackGo })
+            {
+                go.transform.SetParent(chickenRoot.transform, true);
+            }
+
+            var popRoot = PopShotScene.Build(boardMaterial, out var popSession);
+
+            // ── The host ─────────────────────────────────────────────────────
+            // Always awake, because a disabled game cannot hear the message
+            // telling it to switch back on.
+            var hostGo = new GameObject("GameHost");
+            var host = hostGo.AddComponent<GameHost>();
+            WireGames(host, ("chicken_run", chickenRoot, session), ("pop_shot", popRoot, popSession));
+
             Directory.CreateDirectory(Path.GetDirectoryName(ScenePath)!);
             EditorSceneManager.SaveScene(scene, ScenePath);
 
@@ -400,6 +422,32 @@ namespace SkillApp.EditorTools
             AssetDatabase.SaveAssets();
             Debug.Log($"[scene] created {path}");
             return material;
+        }
+
+        /// <summary>
+        /// Fill GameHost's game table.
+        ///
+        /// Its entries are a serialized array of a [Serializable] class rather
+        /// than plain object references, so each element has to be walked. Doing
+        /// it here rather than by hand in the inspector is what keeps the scene
+        /// reproducible from source.
+        /// </summary>
+        private static void WireGames(
+            GameHost host, params (string id, GameObject root, MonoBehaviour session)[] entries)
+        {
+            var so = new SerializedObject(host);
+            var games = so.FindProperty("games");
+            games.arraySize = entries.Length;
+
+            for (int i = 0; i < entries.Length; i++)
+            {
+                var element = games.GetArrayElementAtIndex(i);
+                element.FindPropertyRelative("gameId").stringValue = entries[i].id;
+                element.FindPropertyRelative("root").objectReferenceValue = entries[i].root;
+                element.FindPropertyRelative("session").objectReferenceValue = entries[i].session;
+            }
+
+            so.ApplyModifiedPropertiesWithoutUndo();
         }
 
         private static void Wire(Object target, params (string field, Object value)[] pairs)
