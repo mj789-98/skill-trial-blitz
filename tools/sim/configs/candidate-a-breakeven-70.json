@@ -1,0 +1,62 @@
+{
+  "cold_start": {
+    "seed_target": 12,
+    "bootstrap_rounds": 3,
+    "bootstrap_cap_multiplier": 1.5,
+    "bootstrap_max_stake_cents": 100
+  },
+  "ratchet": {
+    "percentile": 0.7,
+    "up_alpha": 0.45,
+    "down_alpha": 0.08,
+    "max_up_step": 4,
+    "max_down_step": 2
+  },
+  "curve": {
+    "shape": [
+      {
+        "rel": 0.0,
+        "mult": 0.0
+      },
+      {
+        "rel": 0.45,
+        "mult": 0.35
+      },
+      {
+        "rel": 0.7,
+        "mult": 1.0
+      },
+      {
+        "rel": 1.0,
+        "mult": 1.55
+      },
+      {
+        "rel": 1.4,
+        "mult": 2.3
+      },
+      {
+        "rel": 1.8,
+        "mult": 3.0
+      }
+    ],
+    "cap_multiplier": 3.0,
+    "interpolation": "linear"
+  },
+  "ceiling_guard": {
+    "pb_window": 20,
+    "max_target_vs_pb": 0.92,
+    "min_target_vs_pb": 0.45,
+    "floor_percentile": 0.9,
+    "idle_decay_per_day": 0.04
+  },
+  "min_target": 5,
+  "quote_ttl_seconds": 180,
+  "round_deadline_seconds": 900,
+  "stake_tiers_cents": [
+    100,
+    300,
+    500,
+    1000,
+    2000
+  ]
+}
