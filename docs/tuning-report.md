@@ -20,9 +20,8 @@ closed loop — player, engine, curve — not a fixed paytable.
 | variant | RTP (weighted) | win rate | any payout | bust rate | median rounds |
 |---|---|---|---|---|---|
 | baseline-v0 | **61.1%** | 16.4% | 41.3% | 61.1% | 51 |
-| candidate-c-breakeven-80 | **72.4%** | 37.9% | 44.6% | 37.1% | 60 |
 | candidate-a-breakeven-70 | **80.7%** | 39.1% | 46.8% | 26.2% | 60 |
-| candidate-b-breakeven-60 | **86.2%** | 39.9% | 49.5% | 16.3% | 60 |
+| tuned-v1 | **86.4%** | 40.6% | 50.4% | 13.2% | 60 |
 
 RTP is weighted by the population mix rather than pooled, so a rare archetype
 that survives many rounds cannot dominate a headline it does not represent.
@@ -39,18 +38,6 @@ that survives many rounds cannot dominate a headline it does not represent.
 | strong-ambitious | ambitious | 20.5 | 14.3 | 78.2% | 38.7% | 38.7% | 61.3% | 17.0% | 60 |
 | expert-greedy | greedy | 41.5 | 23.4 | 88.2% | 30.6% | 30.6% | 69.4% | 3.0% | 60 |
 
-## candidate-c-breakeven-80
-
-| archetype | policy | mean reach | mean target | RTP | win rate | any payout | died | busted | median rounds |
-|---|---|---|---|---|---|---|---|---|---|
-| novice-cautious | cautious | 6.2 | 6.5 | 47.0% | 0.0% | 45.7% | 54.3% | 98.0% | 38 |
-| novice-erratic | erratic | 6.3 | 6.8 | 53.2% | 24.3% | 32.7% | 67.3% | 91.0% | 41 |
-| average-disciplined | disciplined | 11.7 | 8.1 | 70.7% | 51.8% | 51.8% | 48.2% | 38.0% | 60 |
-| average-erratic | erratic | 11.8 | 8.3 | 76.7% | 37.5% | 46.7% | 53.3% | 23.7% | 60 |
-| strong-disciplined | disciplined | 20.2 | 9.5 | 84.1% | 62.0% | 62.0% | 38.0% | 4.3% | 60 |
-| strong-ambitious | ambitious | 20.1 | 14.5 | 82.8% | 38.7% | 38.7% | 61.3% | 4.7% | 60 |
-| expert-greedy | greedy | 41.6 | 23.0 | 93.0% | 32.1% | 32.1% | 67.9% | 0.3% | 60 |
-
 ## candidate-a-breakeven-70
 
 | archetype | policy | mean reach | mean target | RTP | win rate | any payout | died | busted | median rounds |
@@ -63,14 +50,14 @@ that survives many rounds cannot dominate a headline it does not represent.
 | strong-ambitious | ambitious | 20.4 | 14.3 | 88.6% | 39.0% | 39.0% | 61.0% | 0.7% | 60 |
 | expert-greedy | greedy | 41.8 | 23.7 | 97.6% | 33.6% | 33.6% | 66.4% | 0.0% | 60 |
 
-## candidate-b-breakeven-60
+## tuned-v1
 
 | archetype | policy | mean reach | mean target | RTP | win rate | any payout | died | busted | median rounds |
 |---|---|---|---|---|---|---|---|---|---|
-| novice-cautious | cautious | 6.2 | 4.3 | 72.5% | 1.6% | 69.3% | 31.0% | 25.3% | 60 |
-| novice-erratic | erratic | 6.2 | 6.5 | 63.5% | 28.7% | 37.4% | 62.6% | 65.7% | 52 |
-| average-disciplined | disciplined | 11.8 | 8.1 | 89.5% | 52.2% | 52.2% | 47.8% | 4.0% | 60 |
-| average-erratic | erratic | 11.8 | 8.3 | 86.3% | 41.6% | 50.2% | 49.8% | 17.0% | 60 |
-| strong-disciplined | disciplined | 20.2 | 9.5 | 105.4% | 61.9% | 61.9% | 38.1% | 0.0% | 60 |
-| strong-ambitious | ambitious | 20.7 | 14.5 | 90.1% | 39.0% | 39.0% | 61.0% | 2.3% | 60 |
-| expert-greedy | greedy | 41.5 | 23.6 | 94.2% | 35.4% | 35.4% | 64.6% | 0.0% | 60 |
+| novice-cautious | cautious | 6.2 | 4.0 | 78.4% | 3.0% | 73.0% | 27.4% | 10.3% | 60 |
+| novice-erratic | erratic | 6.2 | 6.5 | 65.4% | 31.0% | 39.9% | 60.1% | 63.0% | 54 |
+| average-disciplined | disciplined | 11.7 | 8.1 | 84.7% | 51.8% | 51.8% | 48.2% | 4.7% | 60 |
+| average-erratic | erratic | 11.8 | 8.4 | 85.8% | 42.9% | 51.1% | 48.9% | 14.3% | 60 |
+| strong-disciplined | disciplined | 19.9 | 9.4 | 100.3% | 61.8% | 61.8% | 38.2% | 0.0% | 60 |
+| strong-ambitious | ambitious | 20.5 | 14.2 | 95.3% | 39.6% | 39.6% | 60.4% | 0.3% | 60 |
+| expert-greedy | greedy | 41.4 | 23.0 | 100.2% | 34.5% | 34.5% | 65.5% | 0.0% | 60 |

@@ -65,9 +65,112 @@ select 'chicken_run', 'baseline-v0', $json${
   "quote_ttl_seconds": 180,
   "round_deadline_seconds": 900,
   "stake_tiers_cents": [100, 300, 500, 1000, 2000]
-}$json$::jsonb, true, 'Starting point, pre-harness. Superseded by the tuned config.'
+}$json$::jsonb, false, 'Starting point, pre-harness. Superseded by tuned-v1; kept as the record of what the harness measured.'
 where not exists (
   select 1 from blitz_configs where game_id = 'chicken_run' and name = 'baseline-v0'
+);
+
+-- ── The tuned config ─────────────────────────────────────────────────
+-- Selected by tools/sim/run.js. Full working in docs/tuning-report.md.
+--
+-- Two things changed from baseline-v0, both of them things the harness found:
+--
+--   1. Break-even moved to 0.55 x target. In baseline-v0 the target WAS
+--      break-even (rel 1.00 -> mult 1.0), so a player who did exactly what the
+--      payout screen asked got their entry back and nothing else — measured win
+--      rate for both disciplined cohorts was 0.0%. Reaching the target now pays
+--      1.62x, and getting most of the way there returns the stake.
+--
+--   2. The top of the curve is now reached at 1.75x target rather than 2.0x,
+--      which is what makes the 3.0x maximum something a real run can touch.
+--
+--      Worth being precise about the cap itself, because the sweep looks odd:
+--      2.5 / 3.0 / 3.5 gives 84.4% / 86.4% / 86.4%. cap_multiplier CLAMPS the
+--      shape (curve.js: min(shape, cap)); it does not scale it. So a cap above
+--      the shape's own top point is inert by construction — it is a safety
+--      ceiling, not a dial for the top end. The dial is the shape's last point.
+--      That is deliberate: a cap that stretched the curve would silently make
+--      every payout bigger when someone raised the safety limit.
+--
+-- RTP 86.4% weighted across the population, win rate 40.6%, bust rate 13.2%.
+-- Chosen over the 88.0% variant deliberately: the frontier is sharp, and at
+-- 88.0% the strong-disciplined cohort returns 102.6% — the mode would be paying
+-- its best players to play. 86.4% is the nearest point where no cohort is
+-- net-positive.
+--
+-- The active config is switched in the same statement that inserts the new one,
+-- because blitz_config_one_active_per_game is a UNIQUE partial index: two active
+-- rows for one game is not a state this database will hold.
+
+update blitz_configs set is_active = false
+ where game_id = 'chicken_run' and name <> 'tuned-v1';
+
+insert into blitz_configs (game_id, name, params, is_active, notes)
+select 'chicken_run', 'tuned-v1', $json${
+  "cold_start": {
+    "seed_target": 12,
+    "bootstrap_rounds": 3,
+    "bootstrap_cap_multiplier": 1.5,
+    "bootstrap_max_stake_cents": 100
+  },
+  "ratchet": {
+    "percentile": 0.7,
+    "up_alpha": 0.45,
+    "down_alpha": 0.08,
+    "max_up_step": 4,
+    "max_down_step": 2
+  },
+  "curve": {
+    "shape": [
+      {
+        "rel": 0.0,
+        "mult": 0.0
+      },
+      {
+        "rel": 0.3,
+        "mult": 0.35
+      },
+      {
+        "rel": 0.55,
+        "mult": 1.0
+      },
+      {
+        "rel": 1.0,
+        "mult": 1.62
+      },
+      {
+        "rel": 1.35,
+        "mult": 2.38
+      },
+      {
+        "rel": 1.75,
+        "mult": 3.0
+      }
+    ],
+    "cap_multiplier": 3.0,
+    "interpolation": "linear"
+  },
+  "ceiling_guard": {
+    "pb_window": 20,
+    "max_target_vs_pb": 0.92,
+    "min_target_vs_pb": 0.45,
+    "floor_percentile": 0.9,
+    "idle_decay_per_day": 0.04
+  },
+  "min_target": 5,
+  "quote_ttl_seconds": 180,
+  "round_deadline_seconds": 900,
+  "stake_tiers_cents": [
+    100,
+    300,
+    500,
+    1000,
+    2000
+  ]
+}$json$::jsonb, true,
+       'Selected by tools/sim/run.js at 86.4% RTP. See docs/tuning-report.md.'
+where not exists (
+  select 1 from blitz_configs where game_id = 'chicken_run' and name = 'tuned-v1'
 );
 
 -- ── Development players ─────────────────────────────────────────────────────

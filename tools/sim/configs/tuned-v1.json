@@ -10,11 +10,7 @@
     "up_alpha": 0.45,
     "down_alpha": 0.08,
     "max_up_step": 4,
-    "max_down_step": 2,
-    "clear_rate_window": 8,
-    "clear_rate_high": 0.55,
-    "clear_rate_step": 1.5,
-    "clear_rate_headroom": 0.35
+    "max_down_step": 2
   },
   "curve": {
     "shape": [
@@ -23,27 +19,27 @@
         "mult": 0.0
       },
       {
-        "rel": 0.35,
+        "rel": 0.3,
         "mult": 0.35
       },
       {
-        "rel": 0.6,
+        "rel": 0.55,
         "mult": 1.0
       },
       {
         "rel": 1.0,
-        "mult": 1.7
+        "mult": 1.62
       },
       {
         "rel": 1.35,
-        "mult": 2.3
+        "mult": 2.38
       },
       {
-        "rel": 1.7,
-        "mult": 2.75
+        "rel": 1.75,
+        "mult": 3.0
       }
     ],
-    "cap_multiplier": 2.75,
+    "cap_multiplier": 3.0,
     "interpolation": "linear"
   },
   "ceiling_guard": {
