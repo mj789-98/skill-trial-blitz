@@ -30,6 +30,7 @@ Each entry states the call, the alternatives, and what would change my mind.
 | [D-018](#d-018--what-was-cut) | What was cut |
 | [D-019](#d-019--what-id-build-next-in-order) | What I'd build next |
 | [D-020](#d-020--where-i-leaned-on-ai-and-where-i-deliberately-did-not) | **Where I leaned on AI** |
+| [D-021](#d-021--what-running-it-on-a-phone-found) | **What running it on a phone found** |
 
 ---
 
@@ -617,9 +618,19 @@ union in `app/src/flow/roundFlow.ts`.
 3. **Two fewer native modules** (`react-native-screens`, `react-native-gesture-handler`)
    in a build that already required seven distinct fixes to get through Gradle 9.
 
-**What it costs.** No transition animations, no deep links, no free hardware back button.
-For four screens, one of which is a fullscreen game, that is a good trade. A fifth screen
-would not change it; a tab bar would.
+**What it costs.** No transition animations, no deep links, and no free hardware back
+button. For four screens, one of which is a fullscreen game, that is a good trade. A
+fifth screen would not change it; a tab bar would.
+
+**Correction, after running it on a phone.** That last item was not a missing nicety. With
+nothing handling `hardwareBackPress`, the back gesture from the payout screen *closed the
+app* — which on a screen about to take a player's money is not a trade-off, it is a bug. I
+had written the cost down and still not felt it, which is the argument for the device pass
+in one line.
+
+It is now handled explicitly, using the reducer's own rules: back leaves a screen, refuses
+to leave a **paid** round, and from the lobby is allowed to background the app, because
+that genuinely is the top of this app's stack.
 
 **Related: exactly one file can spend money.** `App.tsx` makes every API call; screens are
 given data and callbacks and render. `enter` and `submit` are the calls that move money,
@@ -652,6 +663,70 @@ one missing declaration and explains why, rather than `as any` at the call site 
 would have hidden the same gap without explaining it. Without that persistence the app
 falls back to *memory*, which in a cash app means the player's balance appears to vanish
 on every cold start.
+
+---
+
+## D-021 — What running it on a phone found
+
+Five defects, none of which any test could have caught, all found in the first twenty
+minutes on a Realme RMX3085 (Android 13, arm64). Listed because the pattern is the point:
+every one of them passed on desktop, passed in tests, and passed against the Android
+emulator.
+
+**1. The app could not reach its own backend.** `resolveHost()` read
+`NativeModules.SourceCode.scriptURL` — the answer every tutorial gives, and `undefined` on
+React Native 0.86, which is bridgeless-only and no longer exposes SourceCode through the
+legacy proxy. It did not throw. It returned nothing and fell through to the `10.0.2.2`
+fallback — *which is exactly the address an Android emulator uses to reach the host*, so
+every simulator run passed. On hardware: `auth/network-request-failed` and a splash screen
+that never left. Now uses `getDevServer()`.
+
+**2. Haptics could never have worked.** No `VIBRATE` permission in the manifest. It is a
+*normal* permission, granted automatically at install, so there is no runtime prompt to
+notice missing — the game simply never vibrates and nothing in the log says why. I had
+written, tested and committed an entire haptics layer that was incapable of producing a
+single buzz.
+
+**3. Every quote rendered as already expired.** The Firebase callable encoder does not call
+`Date.prototype.toJSON`, so `expiresAt` arrived at the client as `{}`. `Date.parse({})` is
+`NaN`, and `secondsUntil`'s fail-closed default returned 0 — so a 180-second offer showed
+"Get a new offer" the instant the screen opened.
+
+The interesting part is that **my own defensive default hid it**. Failing closed was the
+right call and I would make it again, but a safe default that stays silent lets a defect
+look like a feature. That branch now warns in development, and the server sends an ISO
+string so the wire format is stated rather than left to an encoder's handling of a native
+type.
+
+**4. The bootstrap stake cap did nothing.** `listGames` read
+`params->'bootstrap_max_stake_cents'` at the top level; it lives under `cold_start`. It came
+through as null, the cap check was skipped, and the lobby cheerfully offered $3, $5 and $10
+entries that the server would have refused at quote time. The server was never wrong — the
+screen was.
+
+**5. Unity never finished loading the world.**
+
+    Can't add component because class 'BoxCollider' doesn't exist!
+    UnityEngine.GameObject:CreatePrimitive(PrimitiveType)
+
+`CreatePrimitive` attaches a collider, and because nothing in this game uses physics — the
+simulation *is* the physics — managed stripping removes the Physics module from the player
+build. The editor has it, so this is invisible until a player build runs. The world never
+finished building, Unity never sent `READY`, and the app sat on "Loading the course" with
+the stake already debited.
+
+The previous code destroyed the collider immediately after creating the primitive, which is
+the right intent in the wrong order: the failure happens *inside* `CreatePrimitive`. Fixed
+by building the cube mesh in code, which is better than restoring the Physics module — it
+takes an entire engine module out of the APK for a game that will never raycast anything,
+and a future stripping-level change cannot re-break it.
+
+**The pattern.** Four of the five are cases where something returned a plausible value
+instead of failing: a missing native module returning `undefined`, a permission that is
+absent without a prompt, a `Date` encoding to `{}`, a JSON path that resolves to null. None
+of them threw. The one that did throw, threw only in a player build. That is the category
+of bug a device pass exists to find, and it is why "it compiles and the tests pass" is not
+the same claim as "it works".
 
 ---
 
