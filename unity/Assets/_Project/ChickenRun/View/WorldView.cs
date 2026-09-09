@@ -60,6 +60,11 @@ namespace SkillApp.ChickenRun.View
         /// a yawed frame.
         [SerializeField] private int rowsBehind = 16;
 
+        /// Cells of ground drawn either side of the playable board. Wide enough
+        /// that the longest lane body is fully over ground at the moment it wraps
+        /// — see BuildVerge.
+        [SerializeField] private float vergeCells = 5f;
+
         [Header("Palette")]
         [SerializeField] private Color grassA = new Color(0.42f, 0.78f, 0.35f);
         [SerializeField] private Color grassB = new Color(0.38f, 0.73f, 0.32f);
@@ -80,8 +85,18 @@ namespace SkillApp.ChickenRun.View
         /// material and a sorting problem for one band, it darkens by lerping the
         /// colour itself, which reads the same at a fraction of the complexity.
         /// </summary>
-        [SerializeField] private Color idleShadowNear = new Color(0.16f, 0.18f, 0.30f);
-        [SerializeField] private Color idleShadowClose = new Color(0.04f, 0.04f, 0.10f);
+        [SerializeField] private Color idleShadowNear = new Color(0.22f, 0.26f, 0.34f);
+        [SerializeField] private Color idleShadowClose = new Color(0.05f, 0.05f, 0.11f);
+
+        /// <summary>
+        /// Height of a row's top surface.
+        ///
+        /// Rows are unit cubes centred on y=0, so everything that stands on the
+        /// board is placed against this and not against zero. Named because
+        /// three separate props were placed against zero and each one looked
+        /// like a different bug.
+        /// </summary>
+        internal const float GroundY = 0.5f;
 
         private readonly Dictionary<int, GameObject> _rows = new Dictionary<int, GameObject>();
         private readonly Stack<GameObject> _rowPool = new Stack<GameObject>();
@@ -103,7 +118,6 @@ namespace SkillApp.ChickenRun.View
 
         private Transform _root;
         private Material _sharedMaterial;
-        private GameObject _shadowQuad;
 
         private void Awake()
         {
@@ -133,10 +147,6 @@ namespace SkillApp.ChickenRun.View
                 }
                 _sharedMaterial = new Material(shader);
             }
-
-            _shadowQuad = BuildQuad("IdleShadow", idleShadowNear);
-            _shadowQuad.transform.SetParent(_root, false);
-            _shadowQuad.SetActive(false);
         }
 
         private void LateUpdate()
@@ -180,7 +190,7 @@ namespace SkillApp.ChickenRun.View
             }
 
             RedrawMovers(state, from, to);
-            RedrawIdleShadow(state);
+            TintRows(state);
         }
 
         private GameObject BuildRow(uint seed, int row)
@@ -192,17 +202,10 @@ namespace SkillApp.ChickenRun.View
             go.transform.localPosition = new Vector3((Sim.Cols - 1) * 0.5f, 0f, row);
 
             int kind = Sim.RowTypeAt(seed, row);
-            Color c;
-            switch (kind)
-            {
-                case Sim.RowRoad: c = road; break;
-                case Sim.RowRail: c = rail; break;
-                case Sim.RowRiver: c = water; break;
-                // Alternating grass bands give the eye a sense of forward motion
-                // that a single flat colour does not.
-                default: c = (row % 2 == 0) ? grassA : grassB; break;
-            }
-            Tint(go, c);
+            // Colour is applied by TintRows, not here: the idle line darkens the
+            // ground it has already claimed, so a row's colour is a function of
+            // the current tick and cannot be baked in when the row is recycled.
+            BuildVerge(go);
 
             // Static obstacles sit on the row itself; they never move, so they are
             // built once with the row rather than every frame.
@@ -210,6 +213,43 @@ namespace SkillApp.ChickenRun.View
             existing.Rebuild(this, seed, row, kind);
 
             return go;
+        }
+
+        /// <summary>
+        /// The strip of ground either side of the playable board.
+        ///
+        /// The board is exactly Sim.Cols wide because that is the width the
+        /// simulation knows about, and for a while the renderer was that width
+        /// too. That is wrong for a lane that WRAPS: a car or a log straddling
+        /// the wrap point is drawn twice, once arriving and once leaving, and the
+        /// leaving half hung off the edge of the world into open sky. Nothing
+        /// else in the frame said "this is a board", so it read as a rendering
+        /// fault rather than as a boundary.
+        ///
+        /// So every row gets a wider apron in its own colour, a shade darker and
+        /// a hair lower, and a wrapping body passes over ground on its way out.
+        /// The darker tone is doing a second job: it marks where the chicken may
+        /// not go. The simulation already clamps to the board, and now the board
+        /// looks clamped too.
+        ///
+        /// It is a child of the row rather than a pooled object of its own so it
+        /// is recycled with the row for free — and because the row's non-uniform
+        /// scale is exactly the frame the width is easiest to express in.
+        /// </summary>
+        private void BuildVerge(GameObject row)
+        {
+            var verge = row.transform.Find("Verge");
+            if (verge == null)
+            {
+                var go = BuildQuad("Verge", Color.white);
+                go.transform.SetParent(row.transform, false);
+                verge = go.transform;
+            }
+
+            verge.localScale = new Vector3((Sim.Cols + vergeCells * 2f) / Sim.Cols, 0.98f, 1f);
+            // Just under the row surface, so the two never fight for the same
+            // pixels and the edge of the playable board reads as a small step.
+            verge.localPosition = new Vector3(0f, -0.02f, 0f);
         }
 
         /// <summary>Draw everything that moves, straight from the closed-form queries.</summary>
@@ -294,13 +334,16 @@ namespace SkillApp.ChickenRun.View
 
                         // A post, so the light is at head height rather than
                         // lying on the sleepers.
+                        const float postHeight = 1.1f;
                         var post = TakePlain(new Color(0.30f, 0.30f, 0.33f));
-                        post.transform.localScale = new Vector3(0.12f, 1.1f, 0.12f);
-                        post.transform.localPosition = new Vector3(-0.35f, 0.55f, row);
+                        post.transform.localScale = new Vector3(0.12f, postHeight, 0.12f);
+                        post.transform.localPosition =
+                            new Vector3(-0.35f, GroundY + postHeight * 0.5f, row);
 
                         var lamp = TakePlain(Color.Lerp(new Color(0.25f, 0.05f, 0.05f), signalOn, blink));
                         lamp.transform.localScale = new Vector3(0.30f, 0.30f, 0.30f);
-                        lamp.transform.localPosition = new Vector3(-0.35f, 1.18f, row);
+                        lamp.transform.localPosition =
+                            new Vector3(-0.35f, GroundY + postHeight + 0.05f, row);
                     }
                 }
             }
@@ -322,33 +365,81 @@ namespace SkillApp.ChickenRun.View
             return wrapped;
         }
 
-        private void RedrawIdleShadow(Sim.State state)
+        /// <summary>The colour a row would be with nothing chasing the player.</summary>
+        private Color RowBaseColour(uint seed, int row)
         {
-            // Show it only once the line is actually MOVING — i.e. the grace
-            // period has expired and the player is being pushed.
+            switch (Sim.RowTypeAt(seed, row))
+            {
+                case Sim.RowRoad: return road;
+                case Sim.RowRail: return rail;
+                case Sim.RowRiver: return water;
+                // Alternating grass bands give the eye a sense of forward motion
+                // that a single flat colour does not.
+                default: return (row % 2 == 0) ? grassA : grassB;
+            }
+        }
+
+        /// <summary>
+        /// Colour every visible row, and darken the ground the idle line has taken.
+        ///
+        /// -- Why this is not a shadow object --------------------------------
+        ///
+        /// It was, for three versions, and each one failed differently. A 1-unit
+        /// cube at y=0.3 spanned the chicken's own height and hid it behind the
+        /// very thing chasing it. Flattened to a 0.02 sheet it went UNDER the
+        /// board and was invisible for every run after that. Lifted onto the
+        /// board it became a hard-edged navy rectangle lying on bright grass —
+        /// the board shares one OPAQUE material, so it could never be a soft
+        /// alpha gradient, and an opaque quad on grass reads as a hole.
+        ///
+        /// Darkening the ROWS has none of those failure modes. There is no
+        /// object to occlude the chicken, nothing to place at the wrong height,
+        /// no edge that fails to follow the terrain, and fading over the two rows
+        /// in front of the line does the softening alpha would have done. It
+        /// costs one property block per visible row per frame and no draw calls.
+        ///
+        /// The line it draws is the same one the simulation kills from, so the
+        /// dark ground is exactly the ground that is no longer safe.
+        /// </summary>
+        private void TintRows(Sim.State state)
+        {
+            // Only once the line is actually MOVING — i.e. the grace period has
+            // expired and the player is being pushed.
             //
-            // The first version tested `line >= row - IdleLeadRows`, which is true
-            // on the very first tick of every run (the line rests exactly
+            // An earlier version tested `line >= row - IdleLeadRows`, which is
+            // true on the very first tick of every run (the line rests exactly
             // IdleLeadRows behind), so the warning was permanently on screen and
-            // stopped being a warning at all.
-            int idleTicks = state.Tick - state.LastAdvanceTick;
-            bool threatening = idleTicks > Sim.IdleGraceTicks;
+            // had stopped being a warning at all.
+            bool threatening = state.Tick - state.LastAdvanceTick > Sim.IdleGraceTicks;
+            int line = threatening ? Sim.IdleLineRow(state) : int.MinValue;
 
-            _shadowQuad.SetActive(threatening);
-            if (!threatening) return;
+            // How close the line is to the chicken, so the ground goes darker as
+            // the pressure rises rather than sitting at one flat tone.
+            float urgency = threatening
+                ? Mathf.InverseLerp(state.Row - 5f, state.Row, line)
+                : 0f;
 
-            int line = Sim.IdleLineRow(state);
+            foreach (var kv in _rows)
+            {
+                int row = kv.Key;
+                var c = RowBaseColour(state.Seed, row);
 
-            // Flat on the ground rather than a slab. The first version was a
-            // 1-unit-tall cube at y=0.3, which spanned the chicken's own height
-            // and hid it completely behind the very thing chasing it.
-            _shadowQuad.transform.localScale = new Vector3(Sim.Cols + 4f, 0.02f, 7f);
-            _shadowQuad.transform.localPosition =
-                new Vector3((Sim.Cols - 1) * 0.5f, 0.015f, line - 3.4f);
+                if (threatening)
+                {
+                    // Full strength behind the line, fading out over the two rows
+                    // ahead of it so the boundary is a gradient and not a step.
+                    float taken = Mathf.Clamp01((line - row + 2f) / 2.5f);
+                    if (taken > 0f)
+                    {
+                        var dark = Color.Lerp(idleShadowNear, idleShadowClose, urgency);
+                        c = Color.Lerp(c, dark, taken * 0.85f);
+                    }
+                }
 
-            // Darken as it closes, so the pressure is legible without a UI element.
-            float urgency = Mathf.InverseLerp(state.Row - 4f, state.Row, line);
-            Tint(_shadowQuad, Color.Lerp(idleShadowNear, idleShadowClose, urgency));
+                Tint(kv.Value, c);
+                var verge = kv.Value.transform.Find("Verge");
+                if (verge != null) Tint(verge.gameObject, Props.Shade(c, 0.18f));
+            }
         }
 
         private GameObject Take(Stack<GameObject> pool, System.Func<GameObject> build)
@@ -487,9 +578,17 @@ namespace SkillApp.ChickenRun.View
                     var tree = world.BuildAssemblyChild(transform, "Tree",
                         t => Props.BuildTree(t, world.SharedMaterial, world.ObstacleColor));
                     // Undo the parent row's non-uniform scale so props stay square.
-                    tree.transform.localScale = new Vector3(0.80f / Sim.Cols, 1.25f, 0.80f);
+                    const float treeScale = 1.25f;
+                    tree.transform.localScale =
+                        new Vector3(0.80f / Sim.Cols, treeScale, 0.80f);
+                    // Stand the trunk ON the row. The Props model reaches 0.505
+                    // below its own origin, so at the old 0.62 the entire trunk
+                    // and the underside of the canopy were inside the row cube —
+                    // which is why a tree rendered as a green box sitting flush
+                    // on the grass with no visible trunk at all.
                     tree.transform.localPosition = new Vector3(
-                        (col - (Sim.Cols - 1) * 0.5f) / Sim.Cols, 0.62f, 0f);
+                        (col - (Sim.Cols - 1) * 0.5f) / Sim.Cols,
+                        WorldView.GroundY + 0.505f * treeScale, 0f);
                     _spawned.Add(tree);
                 }
                 return;
