@@ -9,7 +9,7 @@ shipping economics rather than of a model of them.
 ## Settings
 
 - entry: **$3.00** · starting bankroll **$60.00**
-- 150 synthetic players per archetype, up to 40 rounds each
+- 150 synthetic players per archetype, up to 60 rounds each
 - seed `20260101`  ·  game **pop_shot**
 
 The target engine adapts inside every career, so what is measured is the
@@ -19,16 +19,16 @@ closed loop — player, engine, curve — not a fixed paytable.
 
 | variant | RTP (weighted) | win rate | any payout | bust rate | median rounds |
 |---|---|---|---|---|---|
-| popshot-v1 | **90.1%** | 27.9% | 92.4% | 12.8% | 40 |
+| popshot-v1.json | **89.8%** | 26.6% | 96.9% | 27.5% | 60 |
 
 RTP is weighted by the population mix rather than pooled, so a rare archetype
 that survives many rounds cannot dominate a headline it does not represent.
 
-## popshot-v1
+## popshot-v1.json
 
 | archetype | policy | mean reach | mean target | RTP | win rate | any payout | died | busted | median rounds |
 |---|---|---|---|---|---|---|---|---|---|
-| novice | timing | 3.3 | 10.0 | 91.1% | 28.3% | 95.0% | 0.0% | 4.0% | 40 |
-| average | timing | 3.3 | 9.6 | 90.9% | 28.4% | 94.3% | 0.0% | 10.7% | 40 |
-| strong | timing | 3.9 | 9.0 | 90.8% | 27.9% | 91.8% | 0.0% | 14.0% | 40 |
-| expert | timing | 5.8 | 14.0 | 84.1% | 25.6% | 88.1% | 0.0% | 22.7% | 40 |
+| novice | timing | 3.6 | 10.8 | 90.4% | 27.6% | 98.5% | 0.0% | 18.0% | 60 |
+| average | timing | 3.5 | 9.9 | 92.4% | 27.6% | 98.1% | 0.0% | 23.3% | 60 |
+| strong | timing | 4.2 | 10.2 | 88.0% | 25.2% | 96.7% | 0.0% | 29.3% | 60 |
+| expert | timing | 6.6 | 15.7 | 85.0% | 25.1% | 93.9% | 0.0% | 39.3% | 60 |

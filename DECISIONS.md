@@ -37,6 +37,10 @@ the order they are best read in — the index is the better way in.
 | [D-023](#d-023--the-shot-control-curve-and-what-i-tried) | **The shot control curve** (4.9) |
 | [D-024](#d-024--the-buzzer-beater-defined-precisely) | **The buzzer-beater, defined** (4.10) |
 | [D-025](#d-025--what-the-second-game-taught-the-target-engine) | What the second game taught the engine |
+| [D-026](#d-026--the-art-pass-and-the-four-bugs-only-a-phone-could-show-me) | The art pass, and what it found |
+| [D-027](#d-027--making-the-game-easier-moved-the-tuning-numbers-by-exactly-zero) | An easier game measured identically |
+| [D-028](#d-028--what-the-reference-footage-was-actually-for) | What the reference footage was for |
+| [D-029](#d-029--the-wrap-rule-i-had-been-satisfying-half-the-time) | **The wrap rule** (§3) |
 
 ---
 
@@ -973,19 +977,31 @@ is the **mirror image** of D-014, where the same engine *under*-targeted discipl
 Chicken Run players. One engine, two games, two opposite failures, and neither visible
 without the other game.
 
-**The fix is a config value, not code:** `floor_percentile` from 0.9 to 0.6, so the floor
-tracks typical rather than peak play. The band closes from 75–106% to **84–91%**, tighter
-than Chicken Run's own. That is the per-game config from D-013 earning its keep — one
+**The fix is a config value, not code:** `floor_percentile` down from 0.9, so the floor
+tracks typical rather than peak play. That is the per-game config from D-013 earning its
+keep — one engine, tuned differently, because the two games produce differently shaped data.
+
+**It is 0.68, and it was 0.6 until the game changed under it.** Fixing the wrap rule
+(D-029) tied the ball's drift to the basket, which turned the half of all rounds that used
+to open with a lap of the court into rounds that open with a run at the hoop. Mean scores
+rose and the same config paid 92.1%. 0.68 puts it back at 89.7%.
+
+Worth stating plainly because it is the first time a config value in this project had to
+move for a reason that was not about the config: the engine was fine, the game underneath
+it changed shape. It is also the cheapest possible demonstration of why the tuning numbers
+live in data — a rebuild was never needed, only a re-measure. That is the per-game config from D-013 earning its keep — one
 engine, tuned differently, because the two games produce differently shaped data.
 
-**Pop Shot ships at 90.1% RTP** rather than Chicken Run's 86.4%, on purpose: it has no
+**Pop Shot ships at 89.7% RTP** (band 85.0–92.4%) rather than Chicken Run's 86.4%, on
+purpose: it has no
 cash-out, so there is no moment where a player chooses to risk everything and no round
 that pays nothing for a mistake at the end. In a game you cannot bank, a thinner return
 reads as the game simply taking from you.
 
 **Measured honestly.** The first numbers I got were noise — 40 synthetic players per
 archetype gave 6-point swings between runs. Five seeds at 150 players give a standard
-deviation of 0.9pp, and only those numbers were used. The small-sample runs happened and
+deviation of 0.9pp, and only those numbers were used. The 89.7% above is three seeds at
+150 players: 89.8 / 88.2 / 91.0. The small-sample runs happened and
 were discarded.
 
 **The harness plays this game rather than modelling it.** Chicken Run's synthetic players
@@ -1148,3 +1164,43 @@ I put the two side by side — the framing, the tree height, the moving wall of
 traffic, and the empty Pop Shot court. None of them are things a test can assert
 and none of them were visible to the tuning harness (D-027). Looking at the
 reference was the cheapest debugging tool in the project.
+
+---
+
+## D-029 — The wrap rule I had been satisfying half the time
+
+*Section 3: "If the ball goes out of bounds, it rolls back in from the side of the court
+**opposite the basket**."*
+
+I read that sentence at the start, built a toroidal wrap, wrote D-022 about why one
+permanently-live ball is the right reading, and moved on. Re-reading the brief line by line
+at the end, the wrap is more specific than "it comes back": it names *which side*.
+
+**What was wrong.** The ball only ever leaves by the edge it is drifting towards, and the
+drift direction was a coin flip on the seed while the basket is always placed at 45–75% of
+the court. So the rule held whenever the coin agreed with the basket and quietly failed when
+it did not — **20 of 40 seeds**, measured.
+
+**The fix is one function.** Drift towards the basket's side, so the ball exits there and
+wraps in from the far side. `driftDir` now derives from `hoopX` instead of the seed.
+
+**It made the game better, which is the part I did not expect.** In the failing half the ball
+spawned near the basket and drifted *away* from it, so those rounds opened with a full lap of
+the court before the first scoring chance. Every round now opens with a run at the hoop. Mean
+scores rose enough to move the RTP from 89.7% to 92.1% on the same config, which is why
+D-025's `floor_percentile` had to move from 0.6 to 0.68.
+
+**What I take from it.** Two things, and the second is the uncomfortable one.
+
+The cheap lesson: a requirement with a preposition in it — *opposite* the basket — is a
+requirement with a test in it. It is now asserted by watching a real wrap across 40 seeds
+rather than by checking the drift constant, because the property is about where the ball
+*reappears*, and that is the composition of drift, spawn side and wrap. Any one of those
+could be right alone and wrong together.
+
+The uncomfortable one: this survived a written decision *about the wrap* (D-022). Writing
+D-022 made me feel I had considered the rule, and that feeling is exactly what stopped me
+re-reading the sentence. The defect was not in the code or in the reasoning; it was in
+believing a paragraph I wrote was the same thing as the requirement I was given. Everything
+else in this file should be read with that in mind.
+

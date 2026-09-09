@@ -46,7 +46,7 @@
     "pb_window": 20,
     "max_target_vs_pb": 0.92,
     "min_target_vs_pb": 0.45,
-    "floor_percentile": 0.6,
+    "floor_percentile": 0.68,
     "idle_decay_per_day": 0.04
   },
   "min_target": 3,

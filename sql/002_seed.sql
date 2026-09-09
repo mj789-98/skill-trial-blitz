@@ -187,10 +187,18 @@ where not exists (
 --     expert   mean score 16.1   mean target 30.6   RTP  75%
 --
 -- Backwards for a skill game: beginners profited and good players were priced
--- out. Dropping floor_percentile from 0.9 to 0.6 makes the floor track typical
--- rather than peak play, and the band closes to 84-91%.
+-- out. Dropping floor_percentile from 0.9 makes the floor track typical rather
+-- than peak play.
 --
--- RTP 90.1%, win rate 28%, bust rate 12.8%, over 600 synthetic players.
+-- 0.68, not 0.6. 0.6 was measured against a Pop Shot where the ball's drift
+-- direction was a coin flip, so half of all rounds spawned it on the basket's
+-- own side and drifted it AWAY — those rounds opened with a lap of the court
+-- instead of a run at the hoop. Tying the drift to the hoop (which the brief's
+-- wrap rule requires) made every round a scoring round, mean scores rose, and
+-- the same config paid 92.1%. 0.68 puts it back where it was reasoned to be.
+--
+-- RTP 89.7%, band 85.0-92.4%, win rate 27%, over 150 players x 3 seeds
+-- (89.8 / 88.2 / 91.0, sd 1.4pp).
 --
 -- Higher than Chicken Run's 86.4% on purpose. Pop Shot has no cash-out, so
 -- there is no moment where a player chooses to risk everything and no round
@@ -246,7 +254,7 @@ select 'pop_shot', 'popshot-v1', $json${
     "pb_window": 20,
     "max_target_vs_pb": 0.92,
     "min_target_vs_pb": 0.45,
-    "floor_percentile": 0.6,
+    "floor_percentile": 0.68,
     "idle_decay_per_day": 0.04
   },
   "min_target": 3,
