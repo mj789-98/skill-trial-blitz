@@ -355,6 +355,27 @@ export default function App() {
         return <Splash />;
 
       case 'lobby':
+        // No data at all, and an error: the backend is unreachable, and a
+        // lobby with an empty balance and no games is a worse lie than saying
+        // so. A banner is right when a REFRESH fails and the last good data is
+        // still on screen; it is wrong when there has never been any.
+        //
+        // This is the state an existing install lands in, and it is the common
+        // one — a persisted session means sign-in succeeds offline, so the app
+        // sails past the splash and only discovers the problem here.
+        if (error && games.length === 0 && !profile) {
+          return (
+            <Fatal
+              message={
+                `No response from the backend at ${describeHost()}. ` +
+                'The emulators may not be running, or this device may not be ' +
+                'able to reach them.'
+              }
+              onRetry={() => void refresh()}
+            />
+          );
+        }
+
         return (
           <LobbyScreen
             profile={profile}
