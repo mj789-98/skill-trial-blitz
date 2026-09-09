@@ -46,6 +46,12 @@ export type RoundEndReason =
   | 'death'
   /** Idled too long and the advancing kill line caught up. Treated as a death. */
   | 'idle'
+  /**
+   * A timed game ran out of clock. Pop Shot's normal ending, and unlike a death
+   * the score stands — points there are banked as they are scored rather than
+   * risked until a cash-out.
+   */
+  | 'time'
   /** RN told Unity to stop (app backgrounded past the limit, or a forced abort). */
   | 'aborted';
 
@@ -201,5 +207,7 @@ function isCount(v: unknown): v is number {
 }
 
 function isEndReason(v: unknown): v is RoundEndReason {
-  return v === 'cash_out' || v === 'death' || v === 'idle' || v === 'aborted';
+  return (
+    v === 'cash_out' || v === 'death' || v === 'idle' || v === 'time' || v === 'aborted'
+  );
 }

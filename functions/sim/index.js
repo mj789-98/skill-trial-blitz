@@ -20,6 +20,7 @@
 'use strict';
 
 const chickenRun = require('./chickenRun');
+const popShot = require('./popShot');
 
 /**
  * @typedef {object} Validator
@@ -34,10 +35,10 @@ const VALIDATORS = Object.freeze({
     simulate: chickenRun.simulate,
     tickHz: chickenRun.TICK_HZ,
   },
-  // pop_shot: added when the bonus game exists. Its absence is why
-  // games.blitz_enabled is false for pop_shot in the seed — the toggle and the
-  // validator have to arrive together, or Blitz could be switched on for a game
-  // whose scores cannot be checked.
+  pop_shot: {
+    simulate: popShot.simulate,
+    tickHz: popShot.TICK_HZ,
+  },
 });
 
 /**
