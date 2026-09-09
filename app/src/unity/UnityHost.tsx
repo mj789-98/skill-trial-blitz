@@ -166,6 +166,24 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
     // runs React has already detached the node, so unityRef.current is null and
     // the pause below would silently never happen.
     const view = unityRef.current;
+
+    // Resume, because the LAST round paused it.
+    //
+    // The Unity player is a process-wide singleton; this component mounting and
+    // unmounting does not create or destroy it. So the pause in the cleanup
+    // below outlives the component that issued it, and the next round mounts a
+    // fresh UnityHost onto a player that is still suspended: the surface stays
+    // black, no input is processed, and the run quietly idles out and dies
+    // without the player ever seeing a frame.
+    //
+    // Only the FIRST round of an app session worked, which is exactly the shape
+    // of bug that survives every test and every quick manual check.
+    //
+    // windowFocusChanged as well: on Android the surface can come back attached
+    // but unfocused, which renders black in a different way.
+    view?.resumeUnity?.();
+    view?.windowFocusChanged?.(true);
+
     return () => {
       // Unity keeps running behind an unmounted view unless told otherwise,
       // which burns battery and keeps a GL surface alive behind the React

@@ -51,16 +51,17 @@
  * set it, rebuild, and the release binary talks to a named host.
  */
 
-import { NativeModules, Platform } from 'react-native';
+import { NativeModules } from 'react-native';
 
 /** The demo project. Matches .firebaserc, and is what the emulators expect. */
 export const PROJECT_ID = 'demo-skill-trial';
 
 /**
- * Set this before building a release APK that should reach a specific machine.
- * Left empty, a release build falls back to the Android emulator address, which
- * is wrong on a physical device — deliberately, so it fails loudly rather than
- * silently pointing at nothing.
+ * Force a specific host, ignoring everything below. Normally empty.
+ *
+ * Set this only for a release APK aimed at a named machine on a LAN. The
+ * default release path (see resolveHost) is `localhost` plus `adb reverse`,
+ * which needs no IP and therefore no rebuild.
  */
 const EMULATOR_HOST_OVERRIDE = '';
 
@@ -81,9 +82,23 @@ export function resolveHost(): string {
   const host = devServerHost();
   if (host) return host;
 
-  // Release build, no override. The Android emulator alias is the least-wrong
-  // default; on a device this fails to connect, which is the intended outcome.
-  return Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+  // Release build: no Metro to ask.
+  //
+  // `localhost` rather than the 10.0.2.2 emulator alias, because it is the one
+  // answer that works everywhere WITHOUT editing this file and rebuilding:
+  //
+  //     adb reverse tcp:5001 tcp:5001
+  //     adb reverse tcp:9099 tcp:9099
+  //
+  // forwards the device's localhost to the development machine, over the USB
+  // cable, on a physical device and an emulator alike. It needs no LAN address,
+  // survives the machine changing networks, crosses no firewall, and does not
+  // expose the emulator suite to anything.
+  //
+  // 10.0.2.2 would have been correct for exactly one target — an Android
+  // emulator — which is the case a reviewer is least likely to be using for a
+  // recording.
+  return 'localhost';
 }
 
 /**

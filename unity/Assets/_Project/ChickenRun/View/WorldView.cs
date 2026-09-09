@@ -48,9 +48,17 @@ namespace SkillApp.ChickenRun.View
         [Header("Visible window")]
         /// Rows drawn ahead of the chicken. Enough that the player can read and
         /// plan the next few hops, which is what makes a death feel fair.
-        [SerializeField] private int rowsAhead = 14;
+        ///
+        /// Sized from the CAMERA, not from taste: the rig is orthographic and
+        /// yawed 35 degrees, so a portrait screen covers a long diagonal band of
+        /// rows. 14 was enough in the editor's wide Game view and left a wedge of
+        /// bare sky on a 20:9 phone.
+        [SerializeField] private int rowsAhead = 24;
+
         /// Rows kept behind, so the ground does not visibly vanish underfoot.
-        [SerializeField] private int rowsBehind = 6;
+        /// Generous for the same reason, and because "behind" is a large part of
+        /// a yawed frame.
+        [SerializeField] private int rowsBehind = 16;
 
         [Header("Palette")]
         [SerializeField] private Color grassA = new Color(0.42f, 0.78f, 0.35f);
@@ -127,7 +135,16 @@ namespace SkillApp.ChickenRun.View
         private void Redraw(Sim.State state)
         {
             int centre = state.Row;
-            int from = Mathf.Max(0, centre - rowsBehind);
+            // NOT clamped at row 0. The board starts at row 0 but the camera can
+            // see well behind it, and clamping left the bottom-right of the frame
+            // as raw background — the world looked like it was floating on a blue
+            // void for the first several hops of every run, which is exactly the
+            // moment a player is deciding whether this is a real game.
+            //
+            // Negative rows are free: Sim.RowTypeAt returns grass for any row <= 2,
+            // so the run-up renders as plain field and carries no hazards, no
+            // lanes and no meaning to the simulation.
+            int from = centre - rowsBehind;
             int to = centre + rowsAhead;
 
             // Recycle rows that have left the window.

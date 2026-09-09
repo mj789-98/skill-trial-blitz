@@ -133,14 +133,30 @@ npm --prefix app start          # Metro
 npm --prefix app run android    # build and install
 ```
 
-**On a physical device**, nothing else is needed: the app finds the backend by
-reading the host out of Metro's bundle URL, which is by definition a machine
-address the device can already reach. `10.0.2.2`, `localhost` and a LAN IP are
-each correct in different places and hard-coding any one of them breaks the other
-two — see `app/src/api/config.ts`.
+**On a physical device**, nothing else is needed for a debug build: the app finds
+the backend by reading the host out of Metro's bundle URL, which is by definition
+a machine address the device can already reach. `10.0.2.2`, `localhost` and a LAN
+IP are each correct in different places and hard-coding any one of them breaks
+the other two — see `app/src/api/config.ts`.
 
-**For a release APK**, there is no Metro to ask, so set `EMULATOR_HOST_OVERRIDE`
-in that same file to the development machine's LAN address before building.
+### 3b. The prebuilt release APK
+
+`app/android/app/build/outputs/apk/release/app-release.apk`, arm64-v8a, signed
+with the standard Android debug key so it installs without you generating one.
+
+It has no Metro to ask, so it looks for the backend on `localhost` and you point
+that at your machine over the USB cable:
+
+```bash
+adb install -r app-release.apk
+adb reverse tcp:5001 tcp:5001
+adb reverse tcp:9099 tcp:9099
+```
+
+That works on a physical device and an emulator alike, needs no IP address, no
+rebuild, and no firewall change. (If you would rather reach it over the LAN, set
+`EMULATOR_HOST_OVERRIDE` in `app/src/api/config.ts`, add the address to
+`app/android/app/src/main/res/xml/network_security_config.xml`, and rebuild.)
 
 ### 4. Test account
 
@@ -171,6 +187,7 @@ auditable row.
 | Backend — unit + integration | `npm --prefix functions test` | **93** |
 | App — reducer + formatting | `npm --prefix app test` | **18** |
 | End to end, through a real auth token | `npm --prefix functions run test:e2e` | **16 checks** |
+| Generated audio, measured | `SkillApp/Export Audio Preview` in Unity | **8 clips** |
 
 The backend suite needs Postgres up (step 1). The e2e script needs Postgres *and*
 the emulators (steps 1–2); it is a script rather than a test file on purpose,
