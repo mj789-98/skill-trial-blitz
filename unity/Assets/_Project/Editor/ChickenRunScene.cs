@@ -71,7 +71,13 @@ namespace SkillApp.EditorTools
 
             // ── Chicken ──────────────────────────────────────────────────────
             var chickenGo = new GameObject("Chicken");
+            // CreatePrimitive is safe HERE because this runs in the editor,
+            // where the Physics module exists. What is not safe is leaving the
+            // collider behind: it would be serialised into the scene, and the
+            // player build has no CapsuleCollider class to deserialise it into.
             var bodyGo = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            var bodyCollider = bodyGo.GetComponent<Collider>();
+            if (bodyCollider != null) Object.DestroyImmediate(bodyCollider);
             bodyGo.name = "Body";
             bodyGo.transform.SetParent(chickenGo.transform, false);
             Object.DestroyImmediate(bodyGo.GetComponent<Collider>());

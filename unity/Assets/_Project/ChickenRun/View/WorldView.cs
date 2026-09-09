@@ -311,13 +311,13 @@ namespace SkillApp.ChickenRun.View
 
         internal GameObject BuildQuad(string name, Color color)
         {
-            var go = GameObject.CreatePrimitive(PrimitiveType.Cube);
-            go.name = name;
-            // Nothing in this game uses physics; the simulation is the physics.
-            // Leaving colliders on costs a scene query every frame for nothing.
-            var col = go.GetComponent<Collider>();
-            if (col != null) Destroy(col);
-            go.GetComponent<MeshRenderer>().sharedMaterial = _sharedMaterial;
+            // NOT GameObject.CreatePrimitive. It attaches a collider, and the
+            // Physics module is stripped from the player build because nothing in
+            // this game uses it — so on device CreatePrimitive fails with
+            // "Can't add component because class 'BoxCollider' doesn't exist",
+            // the world never finishes building, and Unity never sends READY.
+            // Invisible in the editor, fatal on a phone. See PrimitiveMesh.
+            var go = PrimitiveMesh.CubeObject(name, _sharedMaterial);
             Tint(go, color);
             return go;
         }
