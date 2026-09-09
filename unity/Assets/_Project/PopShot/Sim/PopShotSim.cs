@@ -151,11 +151,20 @@ namespace SkillApp.PopShot.Simulation
             return 4 * Sub + (int)(rng.Next() % (uint)(3 * Sub));
         }
 
+        /// <summary>
+        /// Which way the ball drifts.
+        ///
+        /// Derived from where the basket is, not from the seed. The brief says
+        /// an out-of-bounds ball "rolls back in from the side of the court
+        /// OPPOSITE the basket", and a ball only ever leaves by the edge it is
+        /// drifting towards — so it has to be sent out on the basket's own side.
+        ///
+        /// See the JS twin for the full note. Kept identical: this feeds the
+        /// starting position, so a disagreement here is a divergent world.
+        /// </summary>
         public static int DriftDir(uint seed)
         {
-            var rng = new Rng(seed ^ 0x85ebca6bu);
-            rng.Next();
-            return (rng.Next() & 1u) == 0u ? 1 : -1;
+            return HoopX(seed) * 2 >= CourtW ? 1 : -1;
         }
 
         // ── State ───────────────────────────────────────────────────────────

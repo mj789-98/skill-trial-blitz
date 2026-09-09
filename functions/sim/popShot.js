@@ -199,11 +199,27 @@ function hoopX(seed) {
   return 4 * SUB + (rng() % (3 * SUB));
 }
 
-/** Which way the ball drifts. Half the rounds mirror. */
+/**
+ * Which way the ball drifts.
+ *
+ * Derived from where the basket is, not from the seed, because the brief is
+ * specific about the wrap:
+ *
+ *   "If the ball goes out of bounds, it rolls back in from the side of the
+ *    court OPPOSITE the basket."
+ *
+ * The ball only ever leaves by the edge it is drifting towards, so the only way
+ * to guarantee it re-enters opposite the basket is to send it out on the
+ * basket's own side. Drift towards the basket, wrap in from the far side.
+ *
+ * This was a random mirror per seed, which satisfied that sentence in about
+ * half of all rounds and quietly contradicted it in the rest. It also made
+ * those rounds worse to play: the ball spawned on the far side and drifted
+ * AWAY from the hoop, so the first approach was a lap of the court rather than
+ * a run at the basket.
+ */
 function driftDir(seed) {
-  const rng = mulberry32(seed ^ 0x85ebca6b);
-  rng();
-  return (rng() & 1) === 0 ? 1 : -1;
+  return hoopX(seed) * 2 >= COURT_W ? 1 : -1;
 }
 
 // ── State ───────────────────────────────────────────────────────────────────

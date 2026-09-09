@@ -54,6 +54,64 @@ test('a different seed produces a different course', () => {
   assert.ok(positions.size > 1, 'every seed produced the same course');
 });
 
+test('an out-of-bounds ball comes back in opposite the basket', () => {
+  // Straight from the brief: "If the ball goes out of bounds, it rolls back in
+  // from the side of the court OPPOSITE the basket."
+  //
+  // Asserted by watching a real wrap rather than by checking the drift
+  // constant, because the property the brief states is about where the ball
+  // REAPPEARS, and that is the composition of the drift direction, the spawn
+  // side and the wrap — any of which could be right on its own and wrong
+  // together.
+  //
+  // This failed for half of all seeds before the drift direction was tied to
+  // the hoop: the mirror was random, so the ball just as often left by the far
+  // edge and came back in on the basket's own side.
+  const centre = sim.COURT_W / 2;
+  let wrapsSeen = 0;
+
+  for (let n = 1; n <= 40; n++) {
+    const seed = sim.parseSeed(String(n));
+    const state = sim.createState(seed);
+    const basketRight = state.hoopX >= centre;
+
+    let prevX = state.x;
+    for (let t = 0; t < 900; t++) {
+      sim.step(state, false);
+      if (state.reason) break;
+
+      // A wrap is the only way x can move by most of the court in one tick.
+      if (Math.abs(state.x - prevX) > sim.COURT_W / 2) {
+        const cameInOnRight = state.x > centre;
+        assert.notStrictEqual(
+          cameInOnRight, basketRight,
+          `seed ${n}: basket ${basketRight ? 'right' : 'left'}, ` +
+          `ball re-entered ${cameInOnRight ? 'right' : 'left'}`
+        );
+        wrapsSeen++;
+        break;
+      }
+      prevX = state.x;
+    }
+  }
+
+  assert.ok(wrapsSeen > 20, `only ${wrapsSeen} of 40 rounds wrapped at all`);
+});
+
+test('the ball starts away from the basket, so the first approach is a run at it', () => {
+  // The other half of tying drift to the hoop. With a random mirror, half the
+  // rounds spawned the ball near the basket and drifted it away, so the opening
+  // move was a lap of the court rather than a shot.
+  const centre = sim.COURT_W / 2;
+  for (let n = 1; n <= 40; n++) {
+    const state = sim.createState(sim.parseSeed(String(n)));
+    assert.notStrictEqual(
+      state.x > centre, state.hoopX >= centre,
+      `seed ${n}: ball spawned on the same side as the basket`
+    );
+  }
+});
+
 test('the simulation uses no floating point', () => {
   // Guards the property the whole replay model rests on. Every number in the
   // state after a real run must still be an integer.
