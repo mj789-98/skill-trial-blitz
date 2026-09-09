@@ -1,6 +1,7 @@
 using System;
 using UnityEngine;
 using SkillApp.Bridge;
+using SkillApp.ChickenRun.Audio;
 using SkillApp.ChickenRun.Simulation;
 using SkillApp.ChickenRun.View;
 
@@ -30,6 +31,7 @@ namespace SkillApp.ChickenRun
         [SerializeField] private ChickenRunHud hud;
         [SerializeField] private CashOutButton cashOut;
         [SerializeField] private RunEndOverlay runEnd;
+        [SerializeField] private GameFeedback feedback;
 
         /// <summary>
         /// Start a run automatically when nothing tells us to. Editor and
@@ -143,8 +145,10 @@ namespace SkillApp.ChickenRun
                     break;
 
                 case "SET_AUDIO":
-                    // Audio and haptics land in a later commit; accepted now so an
-                    // early message is not reported as an error.
+                    // The host owns the player's sound and haptics preferences,
+                    // because that is where the settings UI lives. Unity does not
+                    // persist them; it is told, every time.
+                    feedback?.Configure(msg.sound, msg.haptics);
                     break;
             }
         }
@@ -157,6 +161,10 @@ namespace SkillApp.ChickenRun
 
             chicken?.ResetView();
             cameraRig?.SnapToStart();
+            // Clears the rising hop ladder. Without this a new run would open at
+            // whatever pitch the last one ended on, which reads as the streak
+            // having carried over when it has not.
+            feedback?.ResetForRun();
             cashOut?.ResetButton();
             runEnd?.Hide();
             // Under a host, React Native drives what happens after a run; standalone,

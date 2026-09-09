@@ -6,6 +6,7 @@ using UnityEngine.UI;
 using TMPro;
 using SkillApp.Bridge;
 using SkillApp.ChickenRun;
+using SkillApp.ChickenRun.Audio;
 using SkillApp.ChickenRun.View;
 
 namespace SkillApp.EditorTools
@@ -97,6 +98,19 @@ namespace SkillApp.EditorTools
             // ── HUD ──────────────────────────────────────────────────────────
             var hud = BuildHud(game, session, input, out var cashOut, out var runEnd);
 
+            // ── Sound and haptics ────────────────────────────────────────────
+            // On its own object rather than on the game: it adds three AudioSources
+            // at runtime, and the simulation driver should not be carrying an audio
+            // listener's worth of components it never touches.
+            var feedbackGo = new GameObject("Feedback");
+            var feedback = feedbackGo.AddComponent<GameFeedback>();
+            // Something has to hear it. The camera is the conventional home for the
+            // listener and it is the only one allowed in a scene.
+            if (camGo.GetComponent<AudioListener>() == null)
+            {
+                camGo.AddComponent<AudioListener>();
+            }
+
             // Wire the serialized references. Done through SerializedObject rather
             // than public fields so the inspector-facing API stays [SerializeField]
             // private, which is what keeps other code from reaching in at runtime.
@@ -104,8 +118,10 @@ namespace SkillApp.EditorTools
             Wire(world, ("game", game), ("boardMaterial", boardMaterial));
             Wire(chickenView, ("game", game), ("body", bodyGo.transform));
             Wire(camRig, ("game", game), ("camera", cam));
+            Wire(feedback, ("game", game), ("cashOut", cashOut));
             Wire(session,
                 ("game", game),
+                ("feedback", feedback),
                 ("world", world),
                 ("chicken", chickenView),
                 ("cameraRig", camRig),

@@ -1,3 +1,4 @@
+using System;
 using UnityEngine;
 using UnityEngine.EventSystems;
 using UnityEngine.UI;
@@ -33,6 +34,15 @@ namespace SkillApp.ChickenRun.View
     /// </summary>
     public class CashOutButton : MonoBehaviour, IPointerDownHandler, IPointerUpHandler
     {
+        /// <summary>The player put a finger down and the fill began.</summary>
+        public event Action HoldStarted;
+
+        /// <summary>They let go before it filled, or the run ended under them.</summary>
+        public event Action HoldCancelled;
+
+        /// <summary>The hold completed and a cash-out was requested.</summary>
+        public event Action Fired;
+
         [SerializeField] private ChickenRunSession session;
         [SerializeField] private ChickenRunGame game;
         [SerializeField] private ChickenRunInput input;
@@ -44,6 +54,14 @@ namespace SkillApp.ChickenRun.View
         [SerializeField] private RectTransform egg;
 
         [SerializeField] private float holdSeconds = 0.7f;
+
+        /// <summary>
+        /// How long the hold takes. Read by GameFeedback so the rising charge
+        /// sound is generated at exactly this duration — a charge that finishes
+        /// early, or is still climbing when the ring completes, is worse than no
+        /// sound at all.
+        /// </summary>
+        public float HoldSeconds => holdSeconds;
 
         private float _heldFor;
         private bool _holding;
@@ -65,6 +83,12 @@ namespace SkillApp.ChickenRun.View
                     // decide anything about money — the server replays the trace,
                     // sees the cash-out, and pays on the locked curve.
                     session?.RequestCashOut();
+                    // Raised here rather than from the run-ended event so the
+                    // confirmation lands on the press. Waiting for the simulation
+                    // to acknowledge it would put the sound up to a tick late,
+                    // which on the one moment the player has won is exactly where
+                    // latency is most noticeable.
+                    Fired?.Invoke();
                 }
             }
             else if (!_holding && _heldFor > 0f)
@@ -99,6 +123,7 @@ namespace SkillApp.ChickenRun.View
 
             _holding = true;
             _fired = false;
+            HoldStarted?.Invoke();
 
             // The same press would otherwise be read by the gesture handler as a
             // tap when released, hopping the chicken forward at the exact moment
@@ -110,8 +135,13 @@ namespace SkillApp.ChickenRun.View
 
         private void Cancel()
         {
+            bool wasHolding = _holding;
             _holding = false;
             if (!_fired && egg != null) egg.localScale = Vector3.one;
+            // Only when a genuine hold is being abandoned. Cancel() is also called
+            // every frame a run is not running, and firing an event fifty times a
+            // second would stop the charge sound that OnHoldStarted just began.
+            if (wasHolding && !_fired) HoldCancelled?.Invoke();
         }
 
         /// <summary>Reset between runs.</summary>
