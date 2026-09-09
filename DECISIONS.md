@@ -1123,6 +1123,19 @@ spotted it in ten seconds next to somebody else's.
 nothing to judge height against. The reference's street scene is not decoration,
 it is a ruler. Mine now has one.
 
+**And the one I had to be told twice about: the camera angle.** Pop Shot's
+camera looked straight down the depth axis, and a rim seen dead-on is a
+horizontal bar — no opening, no basket, just a shelf the ball goes behind. The
+reference camera is pitched about 18 degrees (its rim ellipse is 0.31 as tall as
+it is wide). Tilting mine turned the rim into a ring, the net into a cone, and
+the court into a floor receding towards the viewer.
+
+It costs the simulation nothing. The ball plays in one plane, and an
+orthographic camera pitched by t maps that plane to `y*cos(t)` — a uniform
+scale. No constant moved and the parity fixtures did not change. It is worth
+saying plainly because it is the cheapest kind of fix there is: the game was
+already correct and was being photographed badly.
+
 **What I did not take: the art itself.** No textures, no imported models, no
 attempt to reproduce the reference's rendered 3D city or its painted chicken.
 Everything is still cubes and spheres generated in code from `Props.cs` and
