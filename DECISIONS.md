@@ -992,3 +992,59 @@ were discarded.
 are a model, because the thing being modelled is where a human chooses to stop and that
 has no algorithm. Pop Shot has no such choice, so its players run the real simulation —
 which means its tuning numbers cannot drift away from the game when the game changes.
+
+---
+
+## D-026 — The art pass, and the four bugs only a phone could show me
+
+*Design prompt, from the reviewer: "before that make the games better they look
+like placeholders."*
+
+**The call.** Spend a pass on how the games look, before recording, rather than
+after. Polish is 10% of the rubric and the smallest line item — but a reviewer
+watches the recording before reading a line of code, and a board of untextured
+cubes says "unfinished" louder than anything a README can say back.
+
+**What it cost.** Nothing structural: no new dependency, no asset pipeline, no
+imported model. Every prop is still cubes and spheres from `PrimitiveMesh`,
+assembled in `Props.cs`, tinted with property blocks. The material moved from
+URP Unlit to URP Lit, which is the one change with a runtime cost, and it is
+what makes a cube read as a solid rather than as a flat coloured shape — unlit,
+every face of a cube renders identically and the whole world looks like paper.
+
+**What made it worth more than the 10%.** The art pass was, unintentionally, a
+test pass. Making the world legible meant looking at it closely on a real
+device for the first time, and that found four defects that had been shipping
+invisibly:
+
+- **The idle warning had been invisible for the entire project.** It is the only
+  signal that the round is about to end for standing still — the mechanic I
+  chose and defended in D-004 — and an earlier fix had flattened it from a slab
+  to a sheet at y=0.015, which put it *under* a board whose surface is y=0.5.
+  A gameplay-critical affordance, absent, and nothing failed.
+- **The chicken had no colour.** `Props` tints with `MaterialPropertyBlock`s,
+  which do not survive being saved into a scene, and the chicken was the one
+  object assembled at edit time. Comb, beak, wattle, legs and eyes all drew the
+  shared material's white. It did not look broken — it looked like a white bird.
+- **The chicken was about twice its intended size** and standing below the
+  ground, because both numbers had been set against Unity's capsule primitive
+  and never re-measured after the capsule was replaced.
+- **Wrapping traffic hung off the edge of the world.** The board is exactly as
+  wide as the simulation, so the second copy of a body straddling the wrap point
+  was drawn over open sky.
+
+None of these were reachable from a unit test. They are not logic — they are the
+gap between what the simulation says and what a person sees, and the only
+instrument for that is a screenshot from the device.
+
+**Where I leaned on AI and where I did not.** The assembly code for the props —
+a car from a chassis, cabin, glass and four wheels; a chicken from a sphere and
+ten cubes — is mechanical, and I let the model write it and then read it. Every
+one of the four defects above was found by looking at a captured frame, cropping
+it, and comparing what was drawn against what the code says should be drawn. The
+model was useful for *why is this white* once the question was posed; it had
+nothing to say about the fact that it was white, because it cannot see.
+
+**What I did not do.** No textures, no shadows, no particle effects, no imported
+art. The world is still made of the same two meshes it was made of before, and a
+reviewer can still read every shape in the frame back to a line in `Props.cs`.
