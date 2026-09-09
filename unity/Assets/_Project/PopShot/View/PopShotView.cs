@@ -25,6 +25,26 @@ namespace SkillApp.PopShot.View
         [SerializeField] private new Camera camera;
         [SerializeField] private Material boardMaterial;
 
+        [Header("Camera")]
+        /// <summary>
+        /// How far the camera looks DOWN at the court, in degrees.
+        ///
+        /// It was zero, and zero is why the hoop never read as a hoop. Dead-on,
+        /// a rim is a horizontal bar — there is no opening to see, so the basket
+        /// looked like a shelf the ball passed behind. The reference camera is
+        /// tilted, which is what turns the rim into an ellipse you can see
+        /// through and the court into a surface receding away from you.
+        ///
+        /// Measured off the reference: its rim ellipse is about 0.31 as tall as
+        /// it is wide, and asin(0.31) is 18 degrees.
+        ///
+        /// This is free for the simulation. The ball moves in the z=0 plane, and
+        /// an orthographic camera pitched by theta maps that plane to
+        /// screen_y = y*cos(theta) — a uniform scale, not a distortion. Nothing
+        /// about the physics or the replay changes; only the picture does.
+        /// </summary>
+        [SerializeField] private float pitch = 18f;
+
         [Header("Palette")]
         [SerializeField] private Color courtColor = new Color(0.83f, 0.53f, 0.31f);
         [SerializeField] private Color lineColor = new Color(0.95f, 0.92f, 0.86f);
@@ -53,13 +73,10 @@ namespace SkillApp.PopShot.View
         private Transform _root;
         private GameObject _ball;
         private GameObject _ghost;
-        private GameObject _rimLeft;
-        private GameObject _rimRight;
-        private GameObject _net;
         private GameObject _board;
         private GameObject _floor;
         private GameObject _target;
-        private GameObject _rim;
+        private GameObject _hoop;
         private GameObject _post;
         private GameObject _arm;
 
@@ -83,7 +100,7 @@ namespace SkillApp.PopShot.View
             // them, which reads as two markers rather than as a basket — the eye
             // needs the bar to close the shape. Seen edge-on from a 2D camera a
             // ring IS a bar, so this is both correct and free.
-            _rim = Build("Rim", rimColor);
+            _hoop = BuildHoop();
 
             // A stanchion, so the hoop is MOUNTED rather than floating.
             //
@@ -100,9 +117,6 @@ namespace SkillApp.PopShot.View
             _post = Build("Stanchion", new Color(0.42f, 0.45f, 0.52f));
             _arm = Build("Arm", new Color(0.42f, 0.45f, 0.52f));
             _board = Build("Backboard", boardColor);
-            _rimLeft = Build("RimLeft", rimColor);
-            _rimRight = Build("RimRight", rimColor);
-            _net = BuildAssembly("Net", t => Props.BuildNet(t, boardMaterial, netColor, 1f));
             // A basketball, not an orange dot: sphere plus seams. Without them
             // the ball has no surface detail at all, so its bounce and travel
             // read as a sliding disc rather than a rolling object.
@@ -114,7 +128,6 @@ namespace SkillApp.PopShot.View
             BuildFence();
         }
 
-        /// <summary>A cube placed by its centre, in world units.</summary>
         /// <summary>
         /// A cube placed by its centre, in world units.
         ///
@@ -136,7 +149,135 @@ namespace SkillApp.PopShot.View
         {
             var go = Build(name, c);
             go.transform.localScale = new Vector3(w, h, 0.4f);
-            go.transform.localPosition = new Vector3(x, y, z);
+            go.transform.localPosition = new Vector3(x, y - DepthRise(z), z);
+            return go;
+        }
+
+        /// <summary>
+        /// How far up the screen a thing at depth `z` floats, in world units.
+        ///
+        /// With the camera pitched down, screen height is y*cos(t) + z*sin(t):
+        /// the further back something is, the HIGHER it is drawn. The backdrop
+        /// sits six to seven units back, so without correcting for this the
+        /// whole street would ride two units above where it was placed and the
+        /// buildings would hang in the air.
+        ///
+        /// Subtracting z*tan(t) makes every y argument in this file mean the
+        /// same thing it meant before the camera moved: the height it appears
+        /// at. Which is the only reason the layout numbers still read sensibly.
+        /// </summary>
+        private float DepthRise(float z) => z * Mathf.Tan(pitch * Mathf.Deg2Rad);
+
+        /// <summary>
+        /// A flat, horizontal panel: thin in y, extended in x and z.
+        ///
+        /// The counterpart to Slab. A Slab is a wall and faces the camera; a
+        /// Plate is a floor and is seen at the pitch angle, so its DEPTH becomes
+        /// its height on screen. That is the whole reason the court reads as
+        /// ground rather than as a picture of ground.
+        /// </summary>
+        private GameObject Plate(
+            string name, Color c, float y, float z, float w, float d)
+        {
+            var go = Build(name, c);
+            go.transform.localScale = new Vector3(w, 0.05f, d);
+            // No DepthRise here, unlike Slab. A plate's whole job is that its
+            // depth becomes screen height, so its y is a real world height and
+            // the tilt is left to do exactly what it is there to do.
+            go.transform.localPosition = new Vector3(Sim.CourtW * Scale * 0.5f, y, z);
+            return go;
+        }
+
+        /// <summary>A cube with a rotation, for anything not axis-aligned.</summary>
+        private GameObject Piece(
+            Transform parent, string name, Color c,
+            Vector3 pos, Vector3 scale, Quaternion rot)
+        {
+            var go = PrimitiveMesh.CubeObject(name, boardMaterial);
+            go.transform.SetParent(parent, false);
+            go.transform.localPosition = pos;
+            go.transform.localScale = scale;
+            go.transform.localRotation = rot;
+            Tint(go, c);
+            return go;
+        }
+
+        /// <summary>
+        /// The basket: a ring lying in the horizontal plane, with a net hanging
+        /// from it.
+        ///
+        /// This is the piece the camera pitch exists for. A rim is a circle in
+        /// the x-z plane, and a pitched camera projects a circle to an ellipse —
+        /// so the ring is built as an actual ring, twenty short bars around a
+        /// circle of the simulation's own RIM_HALF radius, and the projection
+        /// does the rest. Its widest points sit exactly where the simulation
+        /// puts the two rim posts, so what you aim at is what you collide with.
+        ///
+        /// The net follows from that: eight strands from the ring, converging
+        /// inward and downward into a cone. Drawn dead-on, a cone of strands is
+        /// a flat grid — which is precisely what the old net was, and why it
+        /// read as a fence panel hanging under a shelf.
+        /// </summary>
+        private GameObject BuildHoop()
+        {
+            var go = new GameObject("Hoop");
+            go.transform.SetParent(_root, false);
+
+            float r = Sim.RimHalf * Scale;
+            const int segments = 24;
+            float bar = 2f * Mathf.PI * r / segments * 1.35f;
+            // Thin, and it has to be. The pitch squashes the ellipse to a third
+            // of its width, so a bar as thick as the simulation's rim post is
+            // half the height of the whole ring — the first attempt looked like
+            // a crown of red bricks rather than a hoop.
+            const float thick = 0.06f;
+
+            for (int i = 0; i < segments; i++)
+            {
+                float a = 2f * Mathf.PI * i / segments;
+                Piece(go.transform, $"Rim{i}", rimColor,
+                    new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r),
+                    new Vector3(bar, thick, thick),
+                    // Tangential: the bar runs ALONG the circle, not across it.
+                    //
+                    // The -90 is the whole difference. A cube's long axis is X,
+                    // and yawing by -a points X at the circle's RADIUS, so the
+                    // first version drew twenty-four bars pointing outwards — a
+                    // wreath of red dashes rather than a rim.
+                    Quaternion.Euler(0f, -a * Mathf.Rad2Deg - 90f, 0f));
+            }
+
+            const int strands = 10;
+            const float netDrop = 0.55f;
+            const float netPinch = 0.45f;
+
+            for (int i = 0; i < strands; i++)
+            {
+                float a = 2f * Mathf.PI * i / strands;
+                var top = new Vector3(Mathf.Cos(a) * r, 0f, Mathf.Sin(a) * r);
+                var bottom = new Vector3(
+                    Mathf.Cos(a) * r * netPinch, -netDrop, Mathf.Sin(a) * r * netPinch);
+
+                var mid = (top + bottom) * 0.5f;
+                var dir = bottom - top;
+
+                Piece(go.transform, $"Strand{i}", netColor,
+                    mid, new Vector3(0.022f, dir.magnitude, 0.022f),
+                    Quaternion.FromToRotation(Vector3.up, dir.normalized));
+            }
+
+            // A hoop of the net, so the strands read as mesh rather than as
+            // eight unrelated wires.
+            for (int i = 0; i < segments; i++)
+            {
+                float a = 2f * Mathf.PI * i / segments;
+                float rr = r * (1f - (1f - netPinch) * 0.65f);
+                Piece(go.transform, $"NetRing{i}", netColor,
+                    new Vector3(Mathf.Cos(a) * rr, -netDrop * 0.65f, Mathf.Sin(a) * rr),
+                    new Vector3(2f * Mathf.PI * rr / segments * 1.35f, 0.022f, 0.022f),
+                    Quaternion.Euler(0f, -a * Mathf.Rad2Deg - 90f, 0f));
+            }
+
             return go;
         }
 
@@ -255,33 +396,50 @@ namespace SkillApp.PopShot.View
             float w = Sim.CourtW * Scale;
             float floorY = Sim.FloorY * Scale - Sim.BallR * Scale;
 
-            // How much room there is below the floor line is a property of the
-            // DEVICE, not of the court.
+            // The court is a FLOOR, so it is laid out flat in x-z and comes
+            // TOWARDS the viewer rather than being painted on an upright slab.
+            // With the camera pitched, that is what makes it read as ground you
+            // are looking down at — the same trick as the rim, applied to the
+            // largest surface in the frame.
             //
-            // FrameCourt sizes the camera from the court's width, so the height
-            // it ends up showing depends on the surface aspect: this phone
-            // leaves about 1.2 units below y=0, and a 16:9 screen leaves none at
-            // all — the clamp in FrameCourt puts the bottom of the view exactly
-            // on the floor line. The first two attempts at this court were laid
-            // out in absolute units and hung off the bottom of the frame.
+            // It also retires a problem rather than solving it. Laid out
+            // upright, the court had to fit in the sliver of world visible below
+            // the floor line, and how big that sliver is depends on the DEVICE —
+            // this phone leaves about 1.2 units, a 16:9 screen leaves none, and
+            // two attempts hung off the bottom of the frame. Laid out flat, its
+            // height on screen comes from its DEPTH, which no screen shape can
+            // take away.
             //
-            // So everything below the floor is sized to fit 1.1 units and is
-            // understood to be a bonus on tall screens rather than something the
-            // game needs. The one piece that must always be visible is the fence
-            // rail, and that is drawn straddling y=0 for exactly this reason.
-            const float courtMid = -0.72f;
-            const float courtH = 0.62f;
+            // ── Why y is what it is ──────────────────────────────────────────
+            //
+            // Screen height is y*cos(t) + z*sin(t), so a surface coming towards
+            // the viewer falls DOWN the screen as it approaches. The court's far
+            // edge is therefore its HIGHEST point, and it has to land just under
+            // the fence — otherwise the near half of the court is drawn over the
+            // ball, which is what the first flat version did: the court sat in
+            // front of the play plane in z and swallowed the ball at rest.
+            //
+            //   far edge  z = +0.4  ->  screen -0.50  (just below the fence foot)
+            //   near edge z = -2.8  ->  screen -1.49  (bottom of the frame)
+            //
+            // Nothing here is playable. The simulation's floor is the fence
+            // rail; this is only what the court stands on.
+            const float courtY = -0.66f;
+            const float courtZ = -1.20f;
+            const float courtD = 3.20f;
 
-            Slab("CourtPaint", courtPaint, w * 0.5f, floorY + courtMid, w * 0.94f, courtH, 1.0f);
+            Plate("CourtBoards", woodFloor, courtY, courtZ, w, courtD);
+            Plate("CourtPaint", courtPaint, courtY + 0.01f, courtZ, w * 0.90f, courtD * 0.86f);
 
-            // Sideline, centre line and the two keys — the markings that say
-            // "basketball court" with four rectangles.
             var key = new Color(0.66f, 0.28f, 0.24f);
-            Slab("KeyLeft", key, w * 0.20f, floorY + courtMid, 1.6f, courtH * 0.62f, 0.9f);
-            Slab("KeyRight", key, w * 0.80f, floorY + courtMid, 1.6f, courtH * 0.62f, 0.9f);
-            Slab("Sideline", lineColor, w * 0.5f, floorY + courtMid + courtH * 0.5f,
-                w * 0.94f, 0.05f, 0.85f);
-            Slab("CentreLine", lineColor, w * 0.5f, floorY + courtMid, 0.05f, courtH, 0.85f);
+            var keyL = Plate("KeyLeft", key, courtY + 0.02f, courtZ, 1.7f, courtD * 0.50f);
+            keyL.transform.localPosition += new Vector3(-w * 0.30f, 0f, 0f);
+            var keyR = Plate("KeyRight", key, courtY + 0.02f, courtZ, 1.7f, courtD * 0.50f);
+            keyR.transform.localPosition += new Vector3(w * 0.30f, 0f, 0f);
+
+            Plate("HalfWay", lineColor, courtY + 0.03f, courtZ, 0.06f, courtD * 0.86f);
+            Plate("Baseline", lineColor, courtY + 0.03f, courtZ - courtD * 0.43f, w * 0.90f, 0.06f);
+            Plate("FarLine", lineColor, courtY + 0.03f, courtZ + courtD * 0.43f, w * 0.90f, 0.06f);
         }
 
         /// <summary>
@@ -380,12 +538,23 @@ namespace SkillApp.PopShot.View
 
             // Never smaller than the court is tall, or a very wide screen would
             // crop the hoop off the top instead.
-            camera.orthographicSize = Mathf.Max(size, Sim.CourtH * Scale * 0.5f);
+            //
+            // The pitch compresses the play plane vertically by cos(pitch), so
+            // the height that has to fit is slightly less than the court's —
+            // which is why tilting the camera also bought back the room under
+            // the floor line that the court needed.
+            float cos = Mathf.Cos(pitch * Mathf.Deg2Rad);
+            camera.orthographicSize =
+                Mathf.Max(size, Sim.CourtH * Scale * 0.5f * cos);
 
-            camera.transform.position = new Vector3(
-                Sim.CourtW * Scale * 0.5f,
-                Sim.CourtH * Scale * 0.5f,
-                -20f);
+            // Look DOWN at the play plane from in front of it. The camera is
+            // placed back along its own view direction, so the point it is
+            // aimed at stays the centre of the court whatever the pitch is.
+            camera.transform.rotation = Quaternion.Euler(pitch, 0f, 0f);
+
+            var target = new Vector3(
+                Sim.CourtW * Scale * 0.5f, Sim.CourtH * Scale * 0.5f, 0f);
+            camera.transform.position = target - camera.transform.forward * 24f;
         }
 
         /// <summary>
@@ -396,35 +565,21 @@ namespace SkillApp.PopShot.View
         {
             float hoopX = state.HoopXPos * Scale;
             float hoopY = Sim.HoopY * Scale;
-            float rimHalf = Sim.RimHalf * Scale;
-            float postD = Sim.PostR * 2f * Scale;
 
             // Meets the ball's resting height exactly, so the ball sits ON the
             // floor rather than hovering above a slab.
             float floorTop = Sim.FloorY * Scale - Sim.BallR * Scale;
-            // Thinner than it was, and pushed back: it is now the boards under
-            // the painted court rather than the only object at the bottom of
-            // the frame.
-            _floor.transform.localScale = new Vector3(Sim.CourtW * Scale, 1.0f, 0.4f);
-            _floor.transform.localPosition =
-                new Vector3(Sim.CourtW * Scale * 0.5f, floorTop - 0.62f, 1.3f);
+            // A skirt under the fence, filling the sliver between the fence foot
+            // and the far edge of the court.
+            _floor.transform.localScale = new Vector3(Sim.CourtW * Scale, 0.22f, 0.4f);
+            _floor.transform.localPosition = new Vector3(
+                Sim.CourtW * Scale * 0.5f, floorTop - 0.50f - DepthRise(0.5f), 0.5f);
 
-            _rimLeft.transform.localScale = new Vector3(postD, postD, postD);
-            _rimLeft.transform.localPosition = new Vector3(hoopX - rimHalf, hoopY, 0f);
-
-            _rimRight.transform.localScale = new Vector3(postD, postD, postD);
-            _rimRight.transform.localPosition = new Vector3(hoopX + rimHalf, hoopY, 0f);
-
-            // The ring, closing the gap between the posts.
-            _rim.transform.localScale = new Vector3(rimHalf * 2f + postD, postD * 0.72f, postD * 0.9f);
-            _rim.transform.localPosition = new Vector3(hoopX, hoopY, 0f);
-
-            // The net hangs FROM the ring, so its top edge meets the rim exactly.
-            // The first version floated a slab below the hoop with a visible gap,
-            // which read as an unrelated object.
-            const float netHeight = 0.55f;
-            _net.transform.localScale = new Vector3(rimHalf * 1.7f, netHeight, 0.04f);
-            _net.transform.localPosition = new Vector3(hoopX, hoopY - netHeight * 0.5f, 0.3f);
+            // Ring and net are one assembly built around the origin, so the
+            // whole basket moves with a single transform. The ball plays at z=0
+            // and the ring is centred there, so the ball passes THROUGH the
+            // middle of it rather than in front of it.
+            _hoop.transform.localPosition = new Vector3(hoopX, hoopY, 0f);
 
             float boardX = Sim.BoardX(state) * Scale;
             _board.transform.localScale =
