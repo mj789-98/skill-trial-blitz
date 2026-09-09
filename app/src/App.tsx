@@ -17,10 +17,19 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
-import { ActivityIndicator, BackHandler, StatusBar, StyleSheet, View } from 'react-native';
+import {
+  ActivityIndicator,
+  BackHandler,
+  StatusBar,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from './api/client';
+import { describeHost, setRuntimeHost } from './api/config';
+import { loadServerHost, normaliseHost, saveServerHost } from './api/serverHost';
 import { ApiError, toApiError } from './api/errors';
 import { signInAsTestPlayer, watchUser } from './api/auth';
 import type { Game, Profile } from './api/types';
@@ -39,7 +48,7 @@ import PayoutScreen from './screens/PayoutScreen';
 import RoundScreen from './screens/RoundScreen';
 import ResultScreen from './screens/ResultScreen';
 import PracticeResultScreen from './screens/PracticeResultScreen';
-import { Txt } from './ui/components';
+import { Button, Txt } from './ui/components';
 import { colors, space } from './ui/theme';
 
 export default function App() {
@@ -50,6 +59,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
+  /** Bumped by Retry, to re-arm the boot deadline and re-run sign-in. */
+  const [bootAttempt, setBootAttempt] = useState(0);
   const [feedback, setFeedback] = useState<FeedbackSettings>(DEFAULT_SETTINGS);
 
   // The Unity player, mounted ONCE for the session. See RoundScreen's header for
@@ -80,7 +91,33 @@ export default function App() {
 
   // ── Sign in ───────────────────────────────────────────────────────────────
 
+  /**
+   * The device-chosen backend address, applied before the first Firebase call.
+   *
+   * Gating sign-in on this is the whole point. `connectAuthEmulator` runs on
+   * the first call to auth(), and it is one-shot — so if watchUser started
+   * before storage was read, the SDK would already be pointed at the default
+   * and the stored address would silently do nothing.
+   */
+  const [hostReady, setHostReady] = useState(false);
+
   useEffect(() => {
+    let cancelled = false;
+    loadServerHost()
+      .then((host) => {
+        if (cancelled) return;
+        setRuntimeHost(host);
+        setHostReady(true);
+      })
+      .catch(() => setHostReady(true));
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!hostReady) return;
+
     const unsubscribe = watchUser((user) => {
       if (user) {
         dispatch({ type: 'SIGNED_IN' });
@@ -92,7 +129,37 @@ export default function App() {
       signInAsTestPlayer().catch((err) => setFatal(toApiError(err).message));
     });
     return unsubscribe;
-  }, []);
+  }, [bootAttempt, hostReady]);
+
+  /**
+   * A deadline on the splash screen.
+   *
+   * Signing in is the one step with nothing behind it: no lobby to fall back
+   * to, no error banner to render into. So if it never resolves, `booting`
+   * never ends and the app shows a spinner forever — which is exactly what a
+   * player saw the first time the phone was unplugged from the machine running
+   * the emulators. The release build reaches the backend over `adb reverse`, a
+   * USB tunnel, and without it `localhost` is the phone itself. The request
+   * does not fail; it hangs, so no catch anywhere in the app ever runs.
+   *
+   * Twelve seconds is well past a cold start on a real device and well short of
+   * a player deciding the app is broken. What matters more than the number is
+   * that the spinner is BOUNDED: an unbounded one is not a loading state, it is
+   * an error state with no copy.
+   */
+  useEffect(() => {
+    if (phase.name !== 'booting' || !hostReady) return;
+
+    const timer = setTimeout(() => {
+      setFatal(
+        `No response from the backend at ${describeHost()}. ` +
+        'The emulators may not be running, or this device may not be able to ' +
+        'reach them.'
+      );
+    }, 12000);
+
+    return () => clearTimeout(timer);
+  }, [phase.name, bootAttempt, hostReady]);
 
   // ── Loading the lobby ─────────────────────────────────────────────────────
 
@@ -271,7 +338,17 @@ export default function App() {
   // ── Render ────────────────────────────────────────────────────────────────
 
   const content = useMemo(() => {
-    if (fatal) return <Fatal message={fatal} />;
+    if (fatal) {
+      return (
+        <Fatal
+          message={fatal}
+          onRetry={() => {
+            setFatal(null);
+            setBootAttempt((n) => n + 1);
+          }}
+        />
+      );
+    }
 
     switch (phase.name) {
       case 'booting':
@@ -421,18 +498,67 @@ function Splash() {
 }
 
 /** Sign-in itself failed. Nothing in the app works without it, so say so plainly. */
-function Fatal({ message }: { message: string }) {
+/**
+ * Sign-in failed, and there is nothing behind it to fall back to.
+ *
+ * Carries the address field rather than burying it in a settings screen,
+ * because this is the only screen on which it is ever the thing you want, and
+ * a player who cannot get past it has no way to reach a settings screen
+ * anyway.
+ */
+function Fatal({ message, onRetry }: { message: string; onRetry: () => void }) {
+  const [draft, setDraft] = useState('');
+  const [saved, setSaved] = useState(false);
+
+  const applyHost = async () => {
+    const host = normaliseHost(draft);
+    await saveServerHost(host);
+    setRuntimeHost(host);
+    setSaved(true);
+  };
+
   return (
     <View style={styles.centre}>
       <Txt variant="heading" color={colors.loss}>
-        Cannot sign in
+        Cannot reach the server
       </Txt>
       <Txt variant="small" color={colors.textFaint}>
         {message}
       </Txt>
       <Txt variant="small" color={colors.textFaint}>
-        Check that the Firebase emulators are running on the development machine.
+        Nothing has been charged. Your balance lives on the server and is
+        exactly as you left it.
       </Txt>
+
+      <Txt variant="small" color={colors.textFaint}>
+        If the backend is on another machine, enter its address:
+      </Txt>
+      <TextInput
+        style={styles.hostInput}
+        value={draft}
+        onChangeText={(text) => {
+          setDraft(text);
+          setSaved(false);
+        }}
+        placeholder="192.168.1.20"
+        placeholderTextColor={colors.textFaint}
+        autoCapitalize="none"
+        autoCorrect={false}
+        keyboardType="url"
+        inputMode="url"
+      />
+
+      {saved ? (
+        <Txt variant="small" color={colors.textFaint}>
+          Saved. Close the app completely and reopen it — the connection is
+          configured once, when the app starts.
+        </Txt>
+      ) : null}
+
+      <Button
+        title={draft.trim() ? 'Save address' : 'Try again'}
+        onPress={draft.trim() ? applyHost : onRetry}
+      />
     </View>
   );
 }
@@ -441,6 +567,18 @@ const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
   transparent: { flex: 1, backgroundColor: 'transparent' },
   unityLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
+  hostInput: {
+    alignSelf: 'stretch',
+    marginHorizontal: space.lg,
+    borderWidth: 1,
+    borderColor: colors.textFaint,
+    borderRadius: 10,
+    paddingHorizontal: space.md,
+    paddingVertical: space.sm,
+    color: colors.text,
+    fontSize: 16,
+    textAlign: 'center',
+  },
   centre: {
     flex: 1,
     alignItems: 'center',

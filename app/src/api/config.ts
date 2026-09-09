@@ -76,7 +76,22 @@ export const REGION = 'us-central1';
 /**
  * The development machine's address, as reachable from wherever this code runs.
  */
+/**
+ * An address chosen on the device, applied before the first Firebase call.
+ *
+ * Module-level rather than passed around because resolveHost() is called from
+ * inside the Firebase SDK setup, which has no access to React state. It is set
+ * once at boot, from storage, before anything touches the network.
+ */
+let runtimeHost: string | null = null;
+
+/** Apply a device-chosen address. Must run before the first API call. */
+export function setRuntimeHost(host: string | null): void {
+  runtimeHost = host;
+}
+
 export function resolveHost(): string {
+  if (runtimeHost) return runtimeHost;
   if (EMULATOR_HOST_OVERRIDE) return EMULATOR_HOST_OVERRIDE;
 
   const host = devServerHost();
@@ -99,6 +114,22 @@ export function resolveHost(): string {
   // emulator — which is the case a reviewer is least likely to be using for a
   // recording.
   return 'localhost';
+}
+
+/**
+ * The resolved host, plus how it was arrived at, for an error a human reads.
+ *
+ * `localhost` is the answer most likely to be on screen when something is
+ * wrong, and on its own it is actively misleading — a player reading it would
+ * reasonably think the app was talking to itself. Saying which mechanism is
+ * supposed to make localhost mean the development machine turns a dead end
+ * into the actual next step.
+ */
+export function describeHost(): string {
+  const host = resolveHost();
+  if (runtimeHost) return `${host} (set on this device)`;
+  if (host === 'localhost') return 'localhost (via adb reverse over USB)';
+  return host;
 }
 
 /**
