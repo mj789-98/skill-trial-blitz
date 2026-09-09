@@ -5,6 +5,8 @@ an entry says a thing was measured, the measurement is in
 [`docs/tuning-report.md`](docs/tuning-report.md) or in a test.
 
 Each entry states the call, the alternatives, and what would change my mind.
+Entries are numbered in the order the decisions were made, which is not always
+the order they are best read in — the index is the better way in.
 
 **Index**
 
@@ -31,6 +33,10 @@ Each entry states the call, the alternatives, and what would change my mind.
 | [D-019](#d-019--what-id-build-next-in-order) | What I'd build next |
 | [D-020](#d-020--where-i-leaned-on-ai-and-where-i-deliberately-did-not) | **Where I leaned on AI** |
 | [D-021](#d-021--what-running-it-on-a-phone-found) | **What running it on a phone found** |
+| [D-022](#d-022--pop-shot-portrait-and-one-ball-that-never-leaves) | **Pop Shot: portrait** (4.2) |
+| [D-023](#d-023--the-shot-control-curve-and-what-i-tried) | **The shot control curve** (4.9) |
+| [D-024](#d-024--the-buzzer-beater-defined-precisely) | **The buzzer-beater, defined** (4.10) |
+| [D-025](#d-025--what-the-second-game-taught-the-target-engine) | What the second game taught the engine |
 
 ---
 
@@ -666,79 +672,18 @@ on every cold start.
 
 ---
 
-## D-021 — What running it on a phone found
-
-Five defects, none of which any test could have caught, all found in the first twenty
-minutes on a Realme RMX3085 (Android 13, arm64). Listed because the pattern is the point:
-every one of them passed on desktop, passed in tests, and passed against the Android
-emulator.
-
-**1. The app could not reach its own backend.** `resolveHost()` read
-`NativeModules.SourceCode.scriptURL` — the answer every tutorial gives, and `undefined` on
-React Native 0.86, which is bridgeless-only and no longer exposes SourceCode through the
-legacy proxy. It did not throw. It returned nothing and fell through to the `10.0.2.2`
-fallback — *which is exactly the address an Android emulator uses to reach the host*, so
-every simulator run passed. On hardware: `auth/network-request-failed` and a splash screen
-that never left. Now uses `getDevServer()`.
-
-**2. Haptics could never have worked.** No `VIBRATE` permission in the manifest. It is a
-*normal* permission, granted automatically at install, so there is no runtime prompt to
-notice missing — the game simply never vibrates and nothing in the log says why. I had
-written, tested and committed an entire haptics layer that was incapable of producing a
-single buzz.
-
-**3. Every quote rendered as already expired.** The Firebase callable encoder does not call
-`Date.prototype.toJSON`, so `expiresAt` arrived at the client as `{}`. `Date.parse({})` is
-`NaN`, and `secondsUntil`'s fail-closed default returned 0 — so a 180-second offer showed
-"Get a new offer" the instant the screen opened.
-
-The interesting part is that **my own defensive default hid it**. Failing closed was the
-right call and I would make it again, but a safe default that stays silent lets a defect
-look like a feature. That branch now warns in development, and the server sends an ISO
-string so the wire format is stated rather than left to an encoder's handling of a native
-type.
-
-**4. The bootstrap stake cap did nothing.** `listGames` read
-`params->'bootstrap_max_stake_cents'` at the top level; it lives under `cold_start`. It came
-through as null, the cap check was skipped, and the lobby cheerfully offered $3, $5 and $10
-entries that the server would have refused at quote time. The server was never wrong — the
-screen was.
-
-**5. Unity never finished loading the world.**
-
-    Can't add component because class 'BoxCollider' doesn't exist!
-    UnityEngine.GameObject:CreatePrimitive(PrimitiveType)
-
-`CreatePrimitive` attaches a collider, and because nothing in this game uses physics — the
-simulation *is* the physics — managed stripping removes the Physics module from the player
-build. The editor has it, so this is invisible until a player build runs. The world never
-finished building, Unity never sent `READY`, and the app sat on "Loading the course" with
-the stake already debited.
-
-The previous code destroyed the collider immediately after creating the primitive, which is
-the right intent in the wrong order: the failure happens *inside* `CreatePrimitive`. Fixed
-by building the cube mesh in code, which is better than restoring the Physics module — it
-takes an entire engine module out of the APK for a game that will never raycast anything,
-and a future stripping-level change cannot re-break it.
-
-**The pattern.** Four of the five are cases where something returned a plausible value
-instead of failing: a missing native module returning `undefined`, a permission that is
-absent without a prompt, a `Date` encoding to `{}`, a JSON path that resolves to null. None
-of them threw. The one that did throw, threw only in a player build. That is the category
-of bug a device pass exists to find, and it is why "it compiles and the tests pass" is not
-the same claim as "it works".
-
----
-
 ## D-018 — What was cut
 
 The brief asks for this explicitly, and asks that the *game* not be what gets cut.
 
 **Cut deliberately.**
 
-- **Pop Shot (Section 3).** Explicitly bonus, and explicitly gated on Sections 1 and 2
-  being finished *and polished*. They are not polished. Building a second game while the
-  first has no audio would be optimising for the wrong 10%.
+- ~~**Pop Shot (Section 3).**~~ **Built after all**, at the reviewer's direction. My
+  recommendation was against it: the gate says "after 1 and 2 are done *and polished*",
+  and polish is where the remaining gaps are. Recorded rather than quietly rewritten,
+  because the argument against it still stands — a second game less finished than the
+  first costs points in game feel, judgement and polish at once. What it bought instead
+  is real, and is in D-025: the second game exposed an engine defect one game could not.
 - **A deployed backend.** Blocked by the Cloud project quota (D-017), and not required.
 - **Rate limiting, device attestation, bot detection.** Named in D-015 rather than
   half-built. A token defence that catches nothing is worse than a documented gap.
@@ -824,3 +769,226 @@ disprove from the commit cadence.
 compile, a port that does not match. It was not trusted for things that fail silently:
 concurrency, money, and any number I would have to defend. Those all have an executing
 check behind them, and in three cases the check disagreed with the code.
+
+---
+
+## D-021 — What running it on a phone found
+
+Five defects, none of which any test could have caught, all found in the first twenty
+minutes on a Realme RMX3085 (Android 13, arm64). Listed because the pattern is the point:
+every one of them passed on desktop, passed in tests, and passed against the Android
+emulator.
+
+**1. The app could not reach its own backend.** `resolveHost()` read
+`NativeModules.SourceCode.scriptURL` — the answer every tutorial gives, and `undefined` on
+React Native 0.86, which is bridgeless-only and no longer exposes SourceCode through the
+legacy proxy. It did not throw. It returned nothing and fell through to the `10.0.2.2`
+fallback — *which is exactly the address an Android emulator uses to reach the host*, so
+every simulator run passed. On hardware: `auth/network-request-failed` and a splash screen
+that never left. Now uses `getDevServer()`.
+
+**2. Haptics could never have worked.** No `VIBRATE` permission in the manifest. It is a
+*normal* permission, granted automatically at install, so there is no runtime prompt to
+notice missing — the game simply never vibrates and nothing in the log says why. I had
+written, tested and committed an entire haptics layer that was incapable of producing a
+single buzz.
+
+**3. Every quote rendered as already expired.** The Firebase callable encoder does not call
+`Date.prototype.toJSON`, so `expiresAt` arrived at the client as `{}`. `Date.parse({})` is
+`NaN`, and `secondsUntil`'s fail-closed default returned 0 — so a 180-second offer showed
+"Get a new offer" the instant the screen opened.
+
+The interesting part is that **my own defensive default hid it**. Failing closed was the
+right call and I would make it again, but a safe default that stays silent lets a defect
+look like a feature. That branch now warns in development, and the server sends an ISO
+string so the wire format is stated rather than left to an encoder's handling of a native
+type.
+
+**4. The bootstrap stake cap did nothing.** `listGames` read
+`params->'bootstrap_max_stake_cents'` at the top level; it lives under `cold_start`. It came
+through as null, the cap check was skipped, and the lobby cheerfully offered $3, $5 and $10
+entries that the server would have refused at quote time. The server was never wrong — the
+screen was.
+
+**5. Unity never finished loading the world.**
+
+    Can't add component because class 'BoxCollider' doesn't exist!
+    UnityEngine.GameObject:CreatePrimitive(PrimitiveType)
+
+`CreatePrimitive` attaches a collider, and because nothing in this game uses physics — the
+simulation *is* the physics — managed stripping removes the Physics module from the player
+build. The editor has it, so this is invisible until a player build runs. The world never
+finished building, Unity never sent `READY`, and the app sat on "Loading the course" with
+the stake already debited.
+
+The previous code destroyed the collider immediately after creating the primitive, which is
+the right intent in the wrong order: the failure happens *inside* `CreatePrimitive`. Fixed
+by building the cube mesh in code, which is better than restoring the Physics module — it
+takes an entire engine module out of the APK for a game that will never raycast anything,
+and a future stripping-level change cannot re-break it.
+
+**The pattern.** Four of the five are cases where something returned a plausible value
+instead of failing: a missing native module returning `undefined`, a permission that is
+absent without a prompt, a `Date` encoding to `{}`, a JSON path that resolves to null. None
+of them threw. The one that did throw, threw only in a player build. That is the category
+of bug a device pass exists to find, and it is why "it compiles and the tests pass" is not
+the same claim as "it works".
+
+---
+
+## D-022 — Pop Shot: portrait, and one ball that never leaves
+
+*The brief: "portrait or landscape, your call, say why."*
+
+**Call.** Portrait.
+
+**Why.** Three reasons, and the third is the one that actually decided it.
+
+The hoop is above and the ball is below, so the interesting axis is vertical —
+which is the axis a portrait screen has more of. Landscape would spend its extra
+width on court the player never uses.
+
+It also matches Chicken Run and the React Native chrome, so nothing about the app
+ever rotates.
+
+And that is the real argument. Switching orientation resizes the Unity surface,
+and this build has already demonstrated, on a real device, that surface changes
+are the one thing it cannot survive — re-attaching the view produced *"Graphics
+device is null"* and a SIGTRAP (D-021). A design that requires a rotation
+mid-session is a design betting on the exact behaviour that has already broken
+once.
+
+**One ball, permanently in play.** The brief says an out-of-bounds ball "rolls back
+in from the opposite side". A ball that re-enters is a ball that is never lost, so
+Pop Shot is not a sequence of discrete shots — it is one ball that wraps at the
+court edges and that the player keeps aloft and steers through the hoop again and
+again. Every other decision follows from reading that requirement literally.
+
+The renderer draws the ball twice near an edge, one leaving and one already
+arriving, so the wrap reads as continuous motion rather than a teleport.
+
+---
+
+## D-023 — The shot control curve, and what I tried
+
+*The brief asks explicitly what was tried here.*
+
+**Call.** A tap SETS the ball's vertical velocity to a fixed value. It does not add
+to it, and there is no charge, no aim and no power meter.
+
+**What I tried and rejected.**
+
+**Additive impulses** — each tap adds upward velocity. This is the obvious physical
+model and it is unlearnable: the same gesture produces a different result depending
+on how fast the ball was already moving, which is hidden state. It is a power meter
+with no display. A player cannot tell whether a bad outcome was a bad decision or a
+bad starting condition, so they cannot improve.
+
+**Hold to charge, release to shoot** — the classic arcade shot. Rejected because it
+contradicts the out-of-bounds rule: charging implies a discrete shot, and a discrete
+shot implies a ball that is spent afterwards. It would also put a variable delay
+between deciding and acting, in a game where timing is the only skill.
+
+**Drag to aim** — rejected on the same grounds and one more: the brief says "tap
+anywhere on the screen", and anywhere is not a target.
+
+**Why setting works.** One tap always produces exactly the same arc from wherever the
+ball happens to be. So the only variable the player controls is *when*, which is a
+thing they can see themselves getting better at. There is a test asserting this
+property directly, because it is the design and not an implementation detail.
+
+**What it costs.** A skill ceiling lower than a charge mechanic's. There is no
+"perfect shot" to master, only good timing. For a mode that has to be readable in one
+round, on a phone, with money on it, that is the right trade — but a long-lived game
+would want a second dimension eventually.
+
+**Related: input commits on PRESS, not release.** Chicken Run has to tell a tap from a
+swipe, so it must wait for the finger to lift. Pop Shot has one action, so it does
+not, and firing on the press removes a variable delay from the one thing the game is
+about.
+
+---
+
+## D-024 — The buzzer-beater, defined precisely
+
+*The brief points out that its own description of this is circular, and asks for a
+precise definition.*
+
+**The circularity.** A buzzer-beater is a shot made as the clock expires. But a made
+basket adds time to the clock. So a successful buzzer-beater is a shot made when the
+clock has expired, after which the clock has not expired — and "when does the round
+end?" has no answer.
+
+**The resolution: the clock does not end the round. The ball does.**
+
+> The clock reaching zero opens a **resolution window**. The round ends at the first
+> tick where the clock is at zero **and the ball is at or below rim height**. A basket
+> scored during that window is a buzzer-beater: it scores, it adds its time, and play
+> continues.
+
+"Expired" therefore means "expired *and* the ball has come down", which is a condition
+that can only become true once, and the circularity disappears. It also matches what
+the phrase means in the sport: the shot counts if it left your hands before the horn,
+and everyone waits to see whether it drops.
+
+**The cap, and why it is needed.** The control scheme makes it trivial to keep the ball
+above rim height forever — that is exactly what tapping does. Without a bound, "never
+let it fall" would be an unbeatable strategy for an endless round. So the window is
+capped at **three seconds** regardless of where the ball is. Both halves are tested:
+that the round does not end while the ball is up, and that it ends anyway after three
+seconds.
+
+**Slow-motion was free.** The brief asks for it, and it cost one line, because the
+simulation is indexed by **tick** rather than by time. The client may feed ticks at any
+rate; the server replays the same ticks and reaches the same answer, and has no idea
+how fast they were played.
+
+It also cannot be abused. Playing slowly makes a round take longer in wall-clock terms,
+and the server's heartbeat clamp bounds score by *elapsed time* — so stretching time can
+only ever make a claim more plausible, never less.
+
+---
+
+## D-025 — What the second game taught the target engine
+
+Adding Pop Shot was meant to prove an architectural claim: that a new game costs one line
+in the validator registry and one entry in the Unity host, and never touches the money
+path. It did prove that. It also found a defect in the target engine that a single game
+could not have exposed.
+
+**Pop Shot's score distribution is right-skewed and Chicken Run's is not.** Scoring buys
+clock, which buys more scoring, so a hot streak produces an outlier far above a player's
+typical round. Chicken Run has no such feedback: a good run is longer, not
+self-reinforcing.
+
+Measured with Chicken Run's settings, the p90 personal-best floor chased that outlier:
+
+| cohort | mean score | mean target | RTP |
+| --- | --- | --- | --- |
+| novice | 7.7 | 11.3 | **106%** |
+| expert | 16.1 | 30.6 | **75%** |
+
+Backwards for a skill game — beginners profited and good players were priced out. And it
+is the **mirror image** of D-014, where the same engine *under*-targeted disciplined
+Chicken Run players. One engine, two games, two opposite failures, and neither visible
+without the other game.
+
+**The fix is a config value, not code:** `floor_percentile` from 0.9 to 0.6, so the floor
+tracks typical rather than peak play. The band closes from 75–106% to **84–91%**, tighter
+than Chicken Run's own. That is the per-game config from D-013 earning its keep — one
+engine, tuned differently, because the two games produce differently shaped data.
+
+**Pop Shot ships at 90.1% RTP** rather than Chicken Run's 86.4%, on purpose: it has no
+cash-out, so there is no moment where a player chooses to risk everything and no round
+that pays nothing for a mistake at the end. In a game you cannot bank, a thinner return
+reads as the game simply taking from you.
+
+**Measured honestly.** The first numbers I got were noise — 40 synthetic players per
+archetype gave 6-point swings between runs. Five seeds at 150 players give a standard
+deviation of 0.9pp, and only those numbers were used. The small-sample runs happened and
+were discarded.
+
+**The harness plays this game rather than modelling it.** Chicken Run's synthetic players
+are a model, because the thing being modelled is where a human chooses to stop and that
+has no algorithm. Pop Shot has no such choice, so its players run the real simulation —
+which means its tuning numbers cannot drift away from the game when the game changes.

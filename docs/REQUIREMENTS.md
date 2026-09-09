@@ -145,20 +145,22 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 
 ## 4. Pop Shot — BONUS, optional
 
-Only after Chicken Run **and** Blitz are finished and polished.
+Gated on Chicken Run **and** Blitz being finished and polished. Built at the
+reviewer's direction; the recommendation against it, and what it bought instead,
+are in DECISIONS D-018 and D-025.
 
 | # | Requirement | Status |
 |---|---|---|
-| 4.1 | 2D basketball | TODO |
-| 4.2 | Portrait or landscape — your call, say why | TODO |
-| 4.3 | Clock does not start until the first basket | TODO |
-| 4.4 | Tap anywhere to lift the ball and shoot | TODO |
-| 4.5 | Each basket adds time to the shot clock | TODO |
-| 4.6 | Swish (no rim, no backboard) = extra points | TODO |
-| 4.7 | Out of bounds → rolls back in from the opposite side | TODO |
-| 4.8 | Buzzer-beater: slow-mo, animation, extra seconds | TODO |
-| 4.9 | DECISIONS: the shot control curve — what you tried | TODO |
-| 4.10 | DECISIONS: define the buzzer-beater trigger precisely (it is circular as written) | TODO |
+| 4.1 | 2D basketball | DONE — 2D basketball, one ball permanently in play |
+| 4.2 | Portrait or landscape — your call, say why | DONE — portrait, DECISIONS D-022 |
+| 4.3 | Clock does not start until the first basket | DONE — clockRunning stays false until the first basket; tested |
+| 4.4 | Tap anywhere to lift the ball and shoot | DONE — tap anywhere, committed on press |
+| 4.5 | Each basket adds time to the shot clock | DONE — +3s per basket, +1s extra for a swish, capped at 30s |
+| 4.6 | Swish (no rim, no backboard) = extra points | DONE — swish is 3 points vs 2, tracked per flight since the last floor contact |
+| 4.7 | Out of bounds → rolls back in from the opposite side | DONE — toroidal wrap; the renderer draws the ball twice so it reads as continuous |
+| 4.8 | Buzzer-beater: slow-mo, animation, extra seconds | DONE — buzzer window, slow-motion, tested both halves |
+| 4.9 | DECISIONS: the shot control curve — what you tried | DONE — DECISIONS D-023, with the three rejected alternatives |
+| 4.10 | DECISIONS: define the buzzer-beater trigger precisely (it is circular as written) | DONE — DECISIONS D-024 |
 
 ## 5. Backend requirements
 
@@ -205,7 +207,7 @@ Only after Chicken Run **and** Blitz are finished and polished.
 | Weight | Dimension | Where we stand |
 |---|---|---|
 | 30% | Correctness & server authority | strong — full loop, 93 backend tests + 16 e2e checks, threat model written |
-| 25% | **Game feel** | improved — audio and haptics in, including a rising pitch ladder; still no device test and no art |
+| 25% | **Game feel** | two games with audio and haptics; Chicken Run verified on device, Pop Shot not yet |
 | 20% | Code quality & architecture | strong |
 | 15% | Product judgement & written reasoning | strong — 20 DECISIONS entries, with harness numbers behind the claims |
 | 10% | Polish & completeness | partial — no art assets, no recording, no release APK |
