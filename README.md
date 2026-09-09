@@ -154,9 +154,28 @@ adb reverse tcp:9099 tcp:9099
 ```
 
 That works on a physical device and an emulator alike, needs no IP address, no
-rebuild, and no firewall change. (If you would rather reach it over the LAN, set
-`EMULATOR_HOST_OVERRIDE` in `app/src/api/config.ts`, add the address to
-`app/android/app/src/main/res/xml/network_security_config.xml`, and rebuild.)
+rebuild, and no firewall change.
+
+**Or set the address in the app, with no cable and no rebuild.** If the backend
+is on another machine — or you simply do not want to be tethered — install the
+APK, open it, and wait. With nothing to talk to, the app stops after twelve
+seconds and offers a field:
+
+> **Cannot reach the server**
+> No response from the backend at localhost (via adb reverse over USB)…
+> If the backend is on another machine, enter its address:
+
+Type the host machine's LAN address (`ipconfig` / `ifconfig` — the Wi-Fi one,
+e.g. `192.168.1.20`), tap **Save address**, then close the app completely and
+reopen it. The address is remembered. A restart is needed because the Firebase
+SDK is pointed at its backend once, when it is created, and there is no
+supported way to re-point a live instance.
+
+Both machines must be on the same network, and ports 5001 and 9099 must be
+reachable — the emulators already bind `0.0.0.0` (see `firebase.json`), so on
+most setups it just works.
+
+To go back to USB, clear the field and save.
 
 ### 4. Test account
 
