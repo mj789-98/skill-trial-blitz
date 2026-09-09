@@ -112,11 +112,31 @@ dbTest('a quote moves no money', async () => {
 });
 
 dbTest('Blitz is refused on a game where the toggle is off', async () => {
+  // Sets the toggle itself rather than relying on a game that happens to ship
+  // with it off. The first version of this test used pop_shot as its example
+  // and broke the day Pop Shot became playable — which is a test coupled to
+  // seed data rather than to the behaviour it claims to check.
   await reset(1000);
-  await assert.rejects(
-    () => createQuote({ playerId: PLAYER, gameId: 'pop_shot', stakeCents: 100 }),
-    (e) => e.code === 'BLITZ_NOT_ENABLED'
-  );
+  await query("update games set blitz_enabled = false where game_id = 'pop_shot'");
+  try {
+    await assert.rejects(
+      () => createQuote({ playerId: PLAYER, gameId: 'pop_shot', stakeCents: 100 }),
+      (e) => e.code === 'BLITZ_NOT_ENABLED'
+    );
+  } finally {
+    await query("update games set blitz_enabled = true where game_id = 'pop_shot'");
+  }
+});
+
+dbTest('a game with the toggle ON can be quoted, whichever game it is', async () => {
+  // The other half of the same claim: the toggle is a real per-game switch, not
+  // something hard-wired to Chicken Run. Pop Shot has its own config row and its
+  // own curve, and quoting it must go through the same code path.
+  await reset(1000);
+  const q = await createQuote({ playerId: PLAYER, gameId: 'pop_shot', stakeCents: 100 });
+  assert.equal(q.gameId, 'pop_shot');
+  assert.ok(q.curve.length > 1);
+  assert.ok(q.breakEvenScore < q.targetScore, 'break-even was not below the target');
 });
 
 dbTest('break-even on the quoted curve returns exactly the stake', async () => {

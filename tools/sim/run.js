@@ -20,10 +20,19 @@ const path = require('path');
 
 const { loadFromFile, loadFromSeed, withOverride } = require('./config');
 const { runHarness } = require('./harness');
+const chickenPlayers = require('./player');
+const popPlayers = require('./popShotPlayer');
+
+/** Which synthetic population belongs to which game. */
+const PLAYERS = {
+  chicken_run: { population: chickenPlayers.POPULATION, play: chickenPlayers.playRound },
+  pop_shot: { population: popPlayers.POPULATION, play: popPlayers.playRound },
+};
 
 function parseArgs(argv) {
   const args = {
     config: 'baseline-v0',
+    game: 'chicken_run',
     file: null,
     compare: null,
     sweep: null,
@@ -41,6 +50,7 @@ function parseArgs(argv) {
     const value = argv[i + 1];
     switch (key) {
       case '--config': args.config = value; i++; break;
+      case '--game': args.game = value; i++; break;
       case '--file': args.file = value; i++; break;
       case '--compare': args.compare = value; i++; break;
       case '--sweep': args.sweep = value; i++; break;
@@ -94,7 +104,7 @@ function report(args, variants) {
   lines.push('');
   lines.push(`- entry: **${money(args.stake)}** · starting bankroll **${money(args.bankroll)}**`);
   lines.push(`- ${args.players} synthetic players per archetype, up to ${args.rounds} rounds each`);
-  lines.push(`- seed \`${args.seed}\``);
+  lines.push(`- seed \`${args.seed}\`  ·  game **${args.game}**`);
   lines.push('');
   lines.push('The target engine adapts inside every career, so what is measured is the');
   lines.push('closed loop — player, engine, curve — not a fixed paytable.');
@@ -131,9 +141,14 @@ function main() {
 
   const variants = [];
 
+  const players = PLAYERS[args.game];
+  if (!players) throw new Error(`unknown --game '${args.game}'`);
+
   const measure = (params) =>
     runHarness({
       params,
+      population: players.population,
+      play: players.play,
       playersPer: args.players,
       rounds: args.rounds,
       stakeCents: args.stake,

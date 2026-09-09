@@ -42,7 +42,9 @@ const { POPULATION, playRound, rng } = require('./player');
  *
  * @returns per-round records plus how long their bankroll lasted.
  */
-function simulateCareer({ archetype, params, stakeCents, bankrollCents, rounds, random }) {
+function simulateCareer({
+  archetype, params, stakeCents, bankrollCents, rounds, random, play = playRound,
+}) {
   let profile = emptyProfile(`sim:${archetype.name}`, 'chicken_run', params);
   let bankroll = bankrollCents;
 
@@ -69,7 +71,7 @@ function simulateCareer({ archetype, params, stakeCents, bankrollCents, rounds, 
       quote = buildQuote(profile, params, { stakeCents: stake });
     }
 
-    const outcome = playRound(archetype, quote, random);
+    const outcome = play(archetype, quote, random);
 
     const multBp = multiplierBpForScore(quote.curve, outcome.score);
     const payout = payoutCents(stake, multBp);
@@ -171,6 +173,10 @@ function runHarness({
   bankrollCents = 6000,
   seed = 20260101,
   population = POPULATION,
+  // Which game's synthetic players to use. Chicken Run's are a MODEL of a
+  // player; Pop Shot's actually run its simulation, because a Pop Shot score is
+  // fully determined by a tap policy and needs no distribution fitted to it.
+  play = playRound,
 } = {}) {
   const random = rng(seed);
 
@@ -190,6 +196,7 @@ function runHarness({
         bankrollCents,
         rounds,
         random,
+        play,
       });
       careers.push(career);
       records.push(...career.records);

@@ -14,7 +14,7 @@ begin;
 insert into games (game_id, display_name, blitz_enabled, enabled, sort_order)
 values
   ('chicken_run', 'Chicken Run', true,  true, 10),
-  ('pop_shot',    'Pop Shot',    false, true, 20)
+  ('pop_shot',    'Pop Shot',    true,  true, 20)
 on conflict (game_id) do update
   set display_name = excluded.display_name,
       enabled      = excluded.enabled,
@@ -171,6 +171,98 @@ select 'chicken_run', 'tuned-v1', $json${
        'Selected by tools/sim/run.js at 86.4% RTP. See docs/tuning-report.md.'
 where not exists (
   select 1 from blitz_configs where game_id = 'chicken_run' and name = 'tuned-v1'
+);
+
+-- ── Pop Shot config ─────────────────────────────────────────────────────────
+-- Its own row, not a copy of Chicken Run's, and the differences are the whole
+-- argument for per-game targets (DECISIONS D-013).
+--
+-- Pop Shot's score distribution is RIGHT-SKEWED in a way Chicken Run's is not:
+-- scoring buys clock, which buys more scoring, so a hot streak produces an
+-- outlier far above a player's typical round. Measured with Chicken Run's
+-- settings, that broke the engine in a direction I had not seen before — the
+-- p90 personal-best floor chased the outlier and OVER-targeted skilled players:
+--
+--     novice   mean score  7.7   mean target 11.3   RTP 106%
+--     expert   mean score 16.1   mean target 30.6   RTP  75%
+--
+-- Backwards for a skill game: beginners profited and good players were priced
+-- out. Dropping floor_percentile from 0.9 to 0.6 makes the floor track typical
+-- rather than peak play, and the band closes to 84-91%.
+--
+-- RTP 90.1%, win rate 28%, bust rate 12.8%, over 600 synthetic players.
+--
+-- Higher than Chicken Run's 86.4% on purpose. Pop Shot has no cash-out, so
+-- there is no moment where a player chooses to risk everything and no round
+-- that pays exactly zero for a mistake at the end. In a game you cannot bank,
+-- a thinner return reads as the game simply taking from you.
+
+insert into blitz_configs (game_id, name, params, is_active, notes)
+select 'pop_shot', 'popshot-v1', $json${
+  "cold_start": {
+    "seed_target": 8,
+    "bootstrap_rounds": 3,
+    "bootstrap_cap_multiplier": 1.5,
+    "bootstrap_max_stake_cents": 100
+  },
+  "ratchet": {
+    "percentile": 0.7,
+    "up_alpha": 0.45,
+    "down_alpha": 0.08,
+    "max_up_step": 4,
+    "max_down_step": 2
+  },
+  "curve": {
+    "shape": [
+      {
+        "rel": 0.0,
+        "mult": 0.0
+      },
+      {
+        "rel": 0.495,
+        "mult": 0.35
+      },
+      {
+        "rel": 0.9,
+        "mult": 1.0
+      },
+      {
+        "rel": 1.0,
+        "mult": 1.15
+      },
+      {
+        "rel": 1.35,
+        "mult": 2.17
+      },
+      {
+        "rel": 1.75,
+        "mult": 3.0
+      }
+    ],
+    "cap_multiplier": 3.0,
+    "interpolation": "linear"
+  },
+  "ceiling_guard": {
+    "pb_window": 20,
+    "max_target_vs_pb": 0.92,
+    "min_target_vs_pb": 0.45,
+    "floor_percentile": 0.6,
+    "idle_decay_per_day": 0.04
+  },
+  "min_target": 3,
+  "quote_ttl_seconds": 180,
+  "round_deadline_seconds": 900,
+  "stake_tiers_cents": [
+    100,
+    300,
+    500,
+    1000,
+    2000
+  ]
+}$json$::jsonb, true,
+       'Selected by tools/sim/run.js --game pop_shot at 90.1% RTP.'
+where not exists (
+  select 1 from blitz_configs where game_id = 'pop_shot' and name = 'popshot-v1'
 );
 
 -- ── Development players ─────────────────────────────────────────────────────
