@@ -1,10 +1,35 @@
 # DECISIONS
 
-Written incrementally as the build progresses, not retrofitted at the end.
+Written incrementally as the build progressed, not retrofitted at the end. Where
+an entry says a thing was measured, the measurement is in
+[`docs/tuning-report.md`](docs/tuning-report.md) or in a test.
 
-## Format
+Each entry states the call, the alternatives, and what would change my mind.
 
-Each entry states the call, the alternatives considered, and what would change my mind.
+**Index**
+
+| | |
+| --- | --- |
+| [D-001](#d-001--target-platform-android) | Target platform: Android |
+| [D-002](#d-002--unity-editor-version-install-the-pinned-6000113f1) | Unity editor version |
+| [D-003](#d-003--unity-embed-package-azesmwayreact-native-unity111-unforked) | Unity embed package |
+| [D-004](#d-004--idle-threshold-69-seconds-as-an-advancing-line-not-a-timer) | **Idle threshold — 6.9s** (§2.9) |
+| [D-005](#d-005--server-authority-by-deterministic-replay) | Server authority by deterministic replay |
+| [D-006](#d-006--the-simulation-uses-no-floating-point-at-all) | No floating point in the simulation |
+| [D-007](#d-007--a-quoted-curve-stays-valid-for-180-seconds) | **Curve validity — 180s** (§2.5.1) |
+| [D-008](#d-008--an-interrupted-round-settles-at-the-acknowledged-score) | **Interrupted rounds** (§2.5.2) |
+| [D-009](#d-009--entry-fees-are-tiers-and-the-curve-is-scale-free) | **Entry fee tiers** (§2.5.3) |
+| [D-010](#d-010--the-ceiling-problem) | **The ceiling problem** (§2.6.1) |
+| [D-011](#d-011--cold-start-and-why-the-first-rounds-are-not-farmable) | **Cold start** (§2.6.2) |
+| [D-012](#d-012--rtp-864-and-why-not-88) | RTP 86.4%, and why not 88% |
+| [D-013](#d-013--targets-are-per-game-not-shared) | **Multiple games** (§2.6.3) |
+| [D-014](#d-014--the-line-between-hard-and-unwinnable) | **Hard vs unwinnable** (§2.6.4) |
+| [D-015](#d-015--threat-model-what-the-defence-catches-and-what-it-does-not) | Threat model |
+| [D-016](#d-016--a-state-machine-instead-of-a-navigation-stack) | State machine, not a navigator |
+| [D-017](#d-017--firebase-js-sdk-against-a-demo-project) | Firebase JS SDK, demo project |
+| [D-018](#d-018--what-was-cut) | What was cut |
+| [D-019](#d-019--what-id-build-next-in-order) | What I'd build next |
+| [D-020](#d-020--where-i-leaned-on-ai-and-where-i-deliberately-did-not) | **Where I leaned on AI** |
 
 ---
 
@@ -33,7 +58,6 @@ an afternoon" is not an answer worth giving in a review.
 
 ---
 
-_More entries follow as decisions are made._
 ## D-003 — Unity embed package: `@azesmway/react-native-unity@1.1.1`, unforked
 
 **Call.** Use the published `1.1.1` as-is. No fork.
@@ -60,11 +84,668 @@ Inspecting `1.1.1` rather than the `1.0.7` the plan assumed, that work is alread
 `windowFocusChanged` being exposed as a command also matters: it is the documented fix for
 the black-screen-on-resume failure, so that mitigation is available without patching.
 
-**What would change my mind.** A runtime "Unimplemented Component" at the spike gate. The
-fallback stays a fork adding/repairing the codegen wiring, which the brief explicitly invites
-("pick whatever version of it builds, and record what you used"). Pinning React Native down a
-minor version is the last resort and would be a deviation from the one pinned table, so it
-would be raised in the Telegram group before being done, not after.
+**What it did cost.** One `patch-package` patch: the module's Gradle file still lists
+`jcenter()`, which Gradle 9 removed outright, so the build fails at configuration time.
+The patch deletes that one line — `mavenCentral()` is already there beside it — rather
+than forking the package, because a one-line repository removal is not worth owning a
+fork for.
 
 ---
 
+## D-004 — Idle threshold: 6.9 seconds, as an advancing line rather than a timer
+
+*The brief asks for this decision explicitly: "if you idle too long the game ends —
+you decide the threshold, state it, and say why."*
+
+**Call.** **6.9 seconds** of no forward progress ends the round. It is not implemented
+as a countdown. A kill line sits 4 rows behind the chicken and, after a 2.5-second
+grace period, advances one row every 1.1 seconds. If it reaches you, the round ends
+as a death and the score is zero.
+
+```
+grace 2.5s  +  4 rows × 1.1s  =  6.9s worst case
+```
+
+Constants: `IDLE_GRACE_TICKS = 125`, `IDLE_STEP_TICKS = 55`, `IDLE_LEAD_ROWS = 4`,
+at `TICK_HZ = 50` (`functions/sim/chickenRun.js`).
+
+**Why 6.9 and not 3 or 15.** The threshold has to do two jobs at once, and they pull
+against each other:
+
+- **Stop stalling being a strategy.** Without it, the optimal play in a traffic row is
+  to stand on a safe tile and wait for a gap that is guaranteed to arrive, forever. That
+  turns a reaction game into a patience game and makes every target trivially reachable.
+- **Not punish reading the board.** Crossy-Road-style play has a real rhythm: hop, hop,
+  hop, *stop and look at the train*, hop. Three seconds kills that. Fifteen is long
+  enough that stalling is still the best move.
+
+The number is anchored to the traffic rather than picked round. Lane speeds are
+40–110 sub-units/tick over a 9-cell track, so a lane's pattern repeats every
+**1.6s to 4.5s**. 6.9 seconds is therefore between roughly 1.5 and 4 full
+repetitions — enough to watch a pattern come round at least once and *read* it,
+and not enough to stand still and *wait one out*.
+
+**Why a line and not a timer.** Three reasons, in order of how much they mattered:
+
+1. **It is visible.** A timer is a number in a corner that a player does not look at
+   while concentrating. A shadow creeping up behind you is legible without reading
+   anything, and it tells you not just *that* you are running out of time but *how
+   much* — the gap is the countdown.
+2. **It is directional.** Idling is about not making *forward* progress. A line that
+   chases the furthest row you have reached encodes that exactly: shuffling sideways
+   to line up a gap does not reset it, but it does not accelerate it either.
+3. **It creates pressure rather than a cliff.** A timer ends the round at an instant
+   the player did not feel coming. A line makes the last two seconds *tense*, which is
+   the thing the mode is actually selling.
+
+**What it costs.** It is more state than a timer, and it has to be identical on both
+sides of the bridge — the line's position is part of the replay, so a C#/JS divergence
+here would be a divergence in the score. It is covered by the parity test (D-005).
+
+**What would change my mind.** Watching real players. If the recording shows people
+being killed by the line while genuinely reading the board, the grace period is the
+dial to turn, not the step rate — lengthening the grace forgives hesitation without
+making stalling viable again.
+
+---
+
+## D-005 — Server authority by deterministic replay
+
+**Call.** The server issues a seed. The client generates its entire world from that
+seed, plays, and returns the **list of inputs it made**, indexed by fixed-step tick.
+The server re-simulates those inputs against the same seed and computes the score
+itself. The client's own score is carried for comparison only.
+
+**Why this rather than the alternatives.**
+
+- *Trust the client's score.* Rejected: it is the thing the brief exists to test.
+- *Run the game on the server.* Correct, and wrong for this shape of product — it
+  needs realtime netcode, which the brief puts out of scope, and it makes every hop
+  a round trip.
+- *Statistical anomaly detection.* Catches populations, not individuals, and only
+  after they have been paid. Useful as a second layer, not a first one.
+- **Deterministic replay** costs one simulation per settlement (~1ms), needs no
+  realtime connection, and gives an exact answer rather than a probable one.
+
+**The consequences that make it work.**
+
+- The world is a **pure function of `(seed, row, tick)`**. Traffic, trains and logs
+  are computed from that triple, not accumulated. Nothing drifts, and the server can
+  evaluate the state at tick 900 without simulating ticks 1–899 of scenery.
+- The seed is **server-issued**, so a player cannot re-roll for a favourable world.
+- The trace is **bound to the round**, so a good trace cannot be replayed into a
+  second round: the seed differs, and the same inputs produce a different outcome.
+- A trace is a few hundred bytes (three bytes per input: a uint16 tick delta and an
+  action byte), which is small enough to store on every round for later audit.
+
+**What it does not solve.** See D-015.
+
+---
+
+## D-006 — The simulation uses no floating point at all
+
+**Call.** Positions are integers in 1/1000ths of a cell. No `float`, no `double`,
+anywhere in `Sim/`.
+
+**Why.** The simulation runs twice — once in C# (IL2CPP, ARM64, on a phone) and once
+in JavaScript (V8, on a server) — and the two have to agree **exactly**, because the
+difference between agreeing and nearly agreeing is the difference between a payout and
+a dispute. IEEE-754 does not guarantee that: compilers are allowed to contract `a*b+c`
+into a fused multiply-add, `Math.Sin` is not bit-specified across runtimes, and x86 and
+ARM disagree about intermediate precision. Integers have none of those freedoms.
+
+The one place the languages genuinely differ is integer division of negatives — C#
+truncates toward zero, JS `Math.floor` rounds toward negative infinity — so the C# port
+carries an explicit `FloorDiv` rather than relying on `/`.
+
+**How it is verified.** `tools/` exports 500 traces from the JS simulation and replays
+them in Unity, comparing score, end reason, tick count and furthest row. All 500 match,
+covering all four end reasons. This is checked by regeneration rather than by reading
+the two files side by side — the one refactor that renamed a namespace was proved
+behaviour-neutral by the export coming back byte-identical.
+
+---
+
+## D-007 — A quoted curve stays valid for 180 seconds
+
+*Explicitly asked for by the brief: "how long a locked curve stays valid."*
+
+**Call.** **180 seconds** (`quote_ttl_seconds`, in config, per game).
+
+**Why not longer.** The curve is generated from the player's profile at the moment it
+is shown. A player who opens the payout screen, puts the phone down, plays six rounds
+tomorrow and then taps *Play* is holding an offer priced against a person who no longer
+exists. Worse, it is exploitable in one direction only: hold a generous quote from a low
+target, go and deliberately tank a few rounds, and the stale quote is now strictly better
+than what the engine would offer. An expiry closes that without needing to detect it.
+
+**Why not shorter.** 30 seconds is long enough to read the curve but not long enough to
+be interrupted. Being interrupted for a minute is completely normal on a phone, and
+coming back to *"that offer expired"* on a screen you did not do anything wrong on is a
+bad experience for a real problem that almost never happens.
+
+180s is roughly "you got distracted" but not "you went away".
+
+**Two things that make the expiry honest.**
+
+- It is evaluated by the **database clock**, not the server's. Two Function instances can
+  disagree about the time; Postgres cannot disagree with itself, and it is what wrote
+  `expires_at`.
+- The payout screen **shows the countdown** and, when it lapses, re-quotes itself rather
+  than failing at the moment of payment. An expiry the player can see is a rule; an
+  expiry they discover by being refused is a bug.
+
+**Related: one open quote per (player, game).** A new quote supersedes the old one.
+Without that, a player could open the screen repeatedly, collect several live quotes,
+and enter on whichever was most generous — turning a targeting system into a slot machine
+they get to re-roll.
+
+---
+
+## D-008 — An interrupted round settles at the acknowledged score
+
+*Explicitly asked for: "what happens to a round that is interrupted."*
+
+**Call.** A round has a deadline (`round_deadline_seconds`, 900s). A sweeper runs every
+minute and settles any round past its deadline **at the last score the server
+acknowledged via a heartbeat**, using the same code path and the same idempotency key as
+a normal submit. It does not refund, and it does not forfeit.
+
+**Why not refund.** Refunding hands the player a free option: start a round, see it going
+badly, kill the app, get the money back. That is a *strictly dominant strategy* — a
+rational player would never finish a bad run again — and it destroys the mode.
+
+**Why not forfeit at zero.** That punishes someone for a dropped connection or a phone
+call. In a cash app, that is how you earn a chargeback, and it is unfair in the ordinary
+sense as well.
+
+**Why the acknowledged score works.** Killing the app on a bad run banks the bad run,
+which is exactly what would have happened anyway. There is no upside to quitting and no
+penalty for being interrupted. The incentive is neutral, which is the property you want.
+
+**The problem this creates, and the fix.** It makes *"report an enormous score, then never
+submit"* the cheapest attack in the system, because a heartbeat is an unverified claim.
+The heartbeat is therefore **bounded by physics**: the simulation refuses inputs faster
+than one per 120ms (`HOP_COOLDOWN_TICKS = 6` at 50Hz), so a round cannot legitimately
+have gained more than **8.33 rows per second**. The server measures elapsed time on the
+**database clock** and clamps any claim to `elapsed × 8.33 × 1.5`, with the 1.5 as slack
+for clock skew and network delay. The bound is re-applied at settlement as well as at
+write time, so a heartbeat written by an older build still cannot pay above what is
+physically possible.
+
+A round abandoned before scoring anything settles at zero and leaves **both** a stake row
+and a payout row. The money is accounted for, not vanished.
+
+**Tested.** A submit racing the sweeper produces exactly one payout — the two are
+independent processes, both entitled to settle, and the loser collides on
+`UNIQUE (idempotency_key)` rather than paying twice.
+
+---
+
+## D-009 — Entry fees are tiers, and the curve is scale-free
+
+*Explicitly asked for: "the entry fee tiers, and how they relate to the curve."*
+
+**Call.** Five tiers: **$1, $3, $5, $10, $20** (`stake_tiers_cents`, in config). The
+curve is defined in **relative space** — score as a fraction of the target, multiplier as
+a multiple of the stake — so **one shape serves every tier**.
+
+**Why tiers rather than a free amount.** An arbitrary stake is a stake the economics were
+never tuned for. Tiers also make the harness meaningful: measuring five points is a
+finding, measuring a continuum is a chart nobody reads. And the brief's range is $1–$20,
+which five tiers cover with the spacing people actually recognise.
+
+**How the tiers relate to the curve: they don't, and that is the point.** The shape is
+`{rel, mult}` pairs — `rel` is score ÷ target, `mult` is payout ÷ stake. Materialising it
+for a round multiplies `rel` by the player's target and `mult` by their stake. So:
+
+- The *shape* of the offer is identical at $1 and $20. A player learning the game at $1
+  is learning the same curve they will play at $20.
+- Retuning the economics is one config edit, not five.
+- The stake never influences the target. Paying more does not buy an easier round, which
+  it would if the two were coupled — and that coupling is how a skill mode quietly turns
+  into a pay-to-win one.
+
+**Multipliers are integer basis points** in the money path (10000bp = 1.00x). The
+displayed `2.50x` is derived from the basis points by the *server*, so the client never
+has to compute one from the other and get a different answer.
+
+**The cap is a ceiling, not a dial.** `cap_multiplier` clamps the shape rather than
+scaling it, so a cap set above the shape's own top point does nothing — sweeping it
+2.5 / 3.0 / 3.5 gives 84.4% / 86.4% / 86.4% RTP. That is deliberate and worth stating
+plainly, because it looks like a bug in the sweep: a cap that *stretched* the curve would
+silently make every payout bigger the moment someone raised a safety limit. The dial for
+the top end is the shape's last point.
+
+---
+
+## D-010 — The ceiling problem
+
+*The brief's question: "a player who is good at the game will keep hitting their target,
+and their target keeps rising. At some point it stops being reachable. How do you stop
+the mode from quietly becoming unwinnable for your best players — and back the claim with
+the harness."*
+
+**Call.** Three bounds, applied in a fixed order of precedence, and the ceiling wins.
+
+1. **A hard floor.** `min_target = 5`. A target cannot become trivial.
+2. **A demonstrated-ability floor.** The target may not fall below `0.45 ×` the **90th
+   percentile** of the recent window. This is the anti-farm bound (D-011).
+3. **A ceiling, applied last.** The target may never exceed **0.92 × the rolling personal
+   best** over the last 20 rounds. This is the answer to the question.
+
+The ceiling being applied *last* is the whole design. The floor protects revenue; the
+ceiling stops the mode selling an unwinnable round. Those are not comparable stakes, so
+when they conflict the ceiling wins — even when that means the target drops below what
+the anti-farm rule wanted.
+
+**Why 0.92 rather than 1.0.** The target must be *reachable*, not *matchable*. Setting it
+at 100% of a personal best means clearing it requires equalling your best-ever run, which
+happens rarely by definition. 0.92 means a good run clears it.
+
+**Why the ratchet is asymmetric.** `up_alpha = 0.45`, `down_alpha = 0.08`, with per-round
+step caps of +4 and −2. Targets chase good play quickly and forgive bad play grudgingly.
+A single lucky run cannot spike a player out of reach, because the step cap bounds the
+rise regardless of how large the gap is.
+
+**There is also a decay.** `idle_decay_per_day = 0.04`. Skill fades; a player returning
+after a month should not be met with a target set at their peak.
+
+**What the harness says.** Across 2,100 synthetic players and 60 rounds each, no cohort
+is priced out: `expert-greedy` (mean reach 41) plays 60 of 60 rounds with a 0% bust rate,
+and the strongest disciplined cohort clears its target **61.8%** of the time. If the
+ceiling were failing, those clear rates would fall toward zero over a career. They do not.
+
+**What the harness also says, which is less flattering.** See D-014 — the *opposite*
+failure is the one that actually shows up.
+
+---
+
+## D-011 — Cold start, and why the first rounds are not farmable
+
+*The brief's question: "a brand new player has no history. What do you show them, and
+what stops the first N rounds being the most farmable thing in the product?"*
+
+**What they see.** A global baseline target (`seed_target = 12`, the game's own average
+rather than anything personal), a **capped multiplier** of 1.5x instead of 3.0x, and a
+**capped stake** of $1. The payout screen says so in plain language: *"Entries are capped
+while we work out how you play."*
+
+**What stops it being farmed.** The obvious attack is: play the friendly unmodelled
+rounds, then abandon or reset to get more of them. Three things close that.
+
+1. **The allowance is consumed at ENTRY, not at settlement.** A player cannot spend the
+   starter rounds, abandon the ones going badly, and still have the allowance left. This
+   is the load-bearing one, and it is a one-line ordering decision inside the same
+   transaction that debits the stake.
+2. **The allowance is lifetime**, per `(player, game)`, and never resets. There is no
+   "inactive long enough to be a new player again" path.
+3. **The window is worth almost nothing.** 3 rounds × $1 × 1.5x caps the total extractable
+   value of a perfectly-played cold start at **$4.50 gross, $1.50 net**. Even a perfect
+   exploit is not worth the effort, which is a better defence than a clever rule.
+
+**What it does not stop.** Creating new *accounts*. That is a Firebase Auth and
+device-attestation problem, not a target-engine problem, and it is out of scope here —
+noted in D-015 rather than pretended away.
+
+---
+
+## D-012 — RTP 86.4%, and why not 88%
+
+**Call.** The shipped config `tuned-v1` returns **86.4%** to the population, with a
+**40.6%** win rate and a **13.2%** bust rate over 60 rounds.
+
+**How it was picked.** By measurement, not assertion. The harness runs 2,100 synthetic
+players against the *shipping* engine code and reports RTP, win rate and rounds-to-bust
+per archetype. The full table and the variants either side are in
+[`docs/tuning-report.md`](docs/tuning-report.md).
+
+**Two defects the harness found in the config I would otherwise have shipped.**
+
+- **The target *was* break-even.** The original shape had `rel 1.00 → mult 1.0`, so a
+  player who did exactly what the payout screen asked for got their entry back and
+  nothing else. Measured win rate for both disciplined cohorts: **0.0%**. Break-even now
+  sits at 55% of the target and reaching the target pays **1.62x**. This is the single
+  biggest change, and I would not have found it by reading the config.
+- **The cap never bound.** Sweeping `cap_multiplier` 2.5 / 3.0 / 3.5 on the old config
+  gave 59.5% / 61.1% / **61.1%** — identical above 3.0, because the shape's own top point
+  was 3.0. See D-009.
+
+**Why 86.4% and not the 88% I was aiming at.** The frontier is sharp:
+
+The only thing that moves the headline much is the multiplier paid at the target.
+Measured at 300 players per archetype, same seed, same population:
+
+| `mult(target)` | population RTP | strong-disciplined cohort |
+| --- | --- | --- |
+| 1.55 | 84.5% | 97.2% |
+| **1.62 — shipped** | **86.4%** | **100.3%** |
+| 1.68 | 88.0% | 104.7% |
+| 1.72 | 89.0% | 107.7% |
+
+88% is available, at 1.68. It puts the strong-disciplined cohort at **104.7%** — the mode
+paying its best players to play. 1.62 is the last point before that cohort goes
+net-positive, and 86.4% is what it returns. Given a choice between a rounder headline
+number and a config where every cohort's economics hold, the second is the one I can
+defend in a room.
+
+(An earlier draft of this table quoted 88.0% at `mult(target) = 1.64`. That came from a
+smaller sample on a slightly different shape, and re-measuring at a consistent sample size
+moved it. The numbers above are the consistent run — which is the point of having a
+harness rather than a memory.)
+
+**What I would want before shipping this for real.** These are synthetic players. The
+population mix is my estimate, and the RTP is only as good as that estimate. The first
+thing real data should do is replace `POPULATION` in `tools/sim/player.js` with measured
+archetype weights and re-run.
+
+---
+
+## D-013 — Targets are per game, not shared
+
+*The brief's question: "if you added a second mini-game, does a player's target come with
+them, or do they start again?"*
+
+**Call.** Per game. `blitz_profiles` is keyed on `(player_id, game_id)`. A player who has
+played 200 rounds of Chicken Run arrives at Pop Shot with no history and gets the cold
+start (D-011).
+
+**Why.** The target engine models *"how far does this person get at this game"*. That
+number does not transfer, because the skills do not: Chicken Run is pattern reading and
+timing under a moving threat; Pop Shot is an analogue aim-and-power gesture. Someone
+excellent at one has demonstrated nothing about the other.
+
+Carrying a target across would fail in both directions, and both failures are bad:
+
+- A strong Chicken Run player would be handed a Pop Shot target they cannot reach, and
+  the mode would look rigged on their very first paid round of a new game.
+- A weak Chicken Run player would be handed a soft Pop Shot target, and if they happen to
+  be good at basketball, that is a farm.
+
+**What it costs, and the mitigation.** Every new game costs the player another cold start.
+That is real friction, and the answer is not to share targets — it is that the cold start
+is *cheap and honest*: capped stake, capped multiplier, three rounds, and a screen that
+says why.
+
+**What IS shared, deliberately.** Money. One balance, one ledger, across all games. The
+money path never touches game-specific code — only two files in the whole system enumerate
+games (`functions/sim/index.js`, the validator registry, and Unity's `GameHost`), and
+neither is on the settlement path. Adding a game is registering a validator; it is not
+touching the ledger.
+
+**Where I would revisit this.** A *cross-game* signal — "this account is generally
+trustworthy / generally skilled" — is useful for cold start, but as a prior on the
+starting target, not as the target itself. That is a real feature and it is not built.
+
+---
+
+## D-014 — The line between hard and unwinnable
+
+*The brief's question: "where is the line between a hard target and an unwinnable one,
+and how do you keep the mode on the right side of it?"*
+
+**The line I use.** A target is *hard* if a good run clears it and a mediocre run does
+not. It is *unwinnable* if clearing it requires a run better than the player has ever
+produced. That is exactly what `max_target_vs_pb = 0.92` encodes: never ask for more than
+92% of a demonstrated best.
+
+But "unwinnable" is not the only way to be on the wrong side of the line, and the harness
+made me change my answer here.
+
+**The failure that actually showed up is the opposite one.** Measured, on the shipped
+config:
+
+| cohort | mean reach | mean target | clears it |
+| --- | --- | --- | --- |
+| strong-disciplined | **19.9** | **9.4** | 61.8% |
+
+A player who can reach 20 is being asked for 9. That is not unwinnable — it is *too easy*,
+and it is why that cohort sits at 100.3% RTP.
+
+**Why the engine cannot see it.** Cashing out **censors** the observation. When a player
+banks at 10, all the server learns is "they could reach at least 10" — not that they could
+have reached 25. So a disciplined player's scores *are* their target, the 70th percentile
+of those scores is their target, the gap the ratchet chases is zero, and **the target is a
+fixed point of its own update**. The engine is stable and wrong.
+
+**What I tried, and reverted.** The information that survives censoring is not *how far*
+they got but *how often* they cleared it. I implemented a clear-rate term: if a player
+clears their target more than 55% of recent rounds, push the target up regardless of what
+the percentile says. It does not work as written, because the recent scores were played
+against *different* targets — comparing them to the current one makes the target oscillate
+between 11 and 12 rather than climb. I reverted it rather than ship a mechanism that looks
+principled and does nothing. The commit is in the history on purpose.
+
+**The actual fix, which is not built.** A death is the only *uncensored* observation of
+ability: the simulation knows exactly how far the run reached before it ended, and we
+currently throw that away by recording a score of 0. Recording **reach separately from
+score** — score stays 0 for money, reach feeds the ratchet — gives the engine an unbiased
+signal without touching the payout rule. That is a schema, simulation and settlement
+change rather than a tuning one, so it is D-019 item 1, not a change made under time
+pressure to a money path.
+
+**In the meantime it is priced, not ignored.** The curve was tuned knowing this cohort is
+mispriced, which is why the shipped RTP is 86.4% rather than 88% (D-012).
+
+---
+
+## D-015 — Threat model: what the defence catches, and what it does not
+
+The brief asks for at least one real server-side defence and an honest account of what it
+does and does not catch. The defence is deterministic replay (D-005).
+
+### The trust boundary
+
+Unity is a renderer and an input recorder. It holds **no auth token, no API base URL, and
+makes no network call of its own**. Everything that touches a balance goes
+Unity → React Native → Cloud Function → Postgres. The surface an attacker reaches by
+tampering with the Unity runtime is exactly one thing: the contents of a `ROUND_END`
+message. Nothing under `app/src/unity/` has any reason to import the API client, and it
+does not.
+
+Identity comes from `request.auth.uid` — the verified token — never from the request body.
+A `playerId` field in a payload is just something the client typed. Verified end to end:
+an unauthenticated call is refused *even with a valid playerId in the body*.
+
+### Caught
+
+| Attack | Why it fails |
+| --- | --- |
+| Report a score you did not earn | The server recomputes it from the trace. Tested with a claim of 9999 against a real score of 2. |
+| Hand-craft a trace that "wins" | It has to survive the *server's* simulation of the *server's* world. A trace that dies, dies. |
+| Re-roll for an easy world | The seed is server-issued and stored before play. |
+| Replay a good trace into a new round | The trace is bound to a round whose seed differs; the same inputs produce a different outcome. |
+| Inhumanly fast input | The simulation itself refuses inputs closer than 120ms apart, so a superhuman trace is not a valid trace. |
+| Submit twice for two payouts | `UNIQUE (idempotency_key)` on `payout:<roundId>`, with `ON CONFLICT DO NOTHING`. Proven under 6-way concurrency. |
+| Submit while the sweeper settles | Same key. Proven with a genuine `Promise.all` race: exactly one payout row. |
+| Enter twice on one quote | Idempotent on the quote; the second call returns the first round. |
+| Retry a deposit | Idempotent on a client-supplied key namespaced by uid. |
+| Kill the app on a bad run to get a refund | There are no refunds; it settles at the acknowledged score (D-008). |
+| Farm the cold start | Allowance consumed at entry, lifetime, and worth $1.50 net (D-011). |
+| Walk your target down by banking early | The demonstrated-ability floor (D-010). Found by writing the test that reproduced it. |
+| Change the config after someone enters | The curve is **copied onto the round row**; settlement reads only that copy. Tested by wrecking the live config mid-round. |
+| Read or write balances over the REST API | Supabase's Data API is switched **off**, so `players` and `ledger_entries` are not reachable except through Functions. |
+
+### Not caught
+
+Listed because pretending otherwise is worse than the gaps.
+
+1. **An inflated heartbeat on a round that is never submitted.** Bounded, not eliminated.
+   A heartbeat is an unverified claim; the physical clamp (D-008) caps it at 8.33 rows/sec
+   × 1.5 slack, so a patient attacker can still claim *up to* the maximum physically
+   possible score by waiting and then killing the app. They cannot claim more. Closing it
+   properly means requiring a partial trace with each heartbeat, which is more bandwidth
+   and more server work for an attack that is bounded and detectable.
+2. **A perfect bot.** A program that plays legitimately, with human-plausible timing,
+   produces a genuinely valid trace. Replay cannot distinguish it from a very good player,
+   and it never will — this is the one attack the whole approach is structurally blind to.
+   The answer is behavioural: input-timing distributions, device attestation
+   (Play Integrity), and flagging accounts whose score distribution has no human variance.
+   None of that is built.
+3. **Multi-accounting.** Nothing stops one person creating many accounts and farming the
+   cold start of each. Bounded at $1.50 net per account, so it is uneconomic rather than
+   prevented. Real answers are device fingerprinting and KYC, both out of scope.
+4. **No rate limiting.** Nothing stops a client hammering `blitzQuote`. Quote generation
+   is cheap and moves no money, so the exposure is cost rather than fairness — but it
+   should exist.
+5. **Timing side channels.** The server does not check that the wall-clock time a round
+   took is consistent with the tick count in the trace. A player could play slowly and
+   submit a trace claiming they played fast. It gains them nothing today, but it is the
+   kind of gap that becomes exploitable when a time-based feature is added.
+6. **Trace size.** A trace is length-validated but not bounded to a sane maximum before
+   simulation, so an enormous trace is a cheap way to burn server CPU.
+
+---
+
+## D-016 — A state machine instead of a navigation stack
+
+**Call.** No React Navigation. The four screens are a `useReducer` over a discriminated
+union in `app/src/flow/roundFlow.ts`.
+
+**Why, in order of how much it mattered.**
+
+1. **The Unity player must stay mounted.** The embed uses `androidKeepPlayerMounted` so
+   that going from the payout screen into a round is instant rather than a multi-second
+   reload. A stack navigator unmounts the screen it navigates away from, which tears down
+   the GL surface every time — the exact cost the embed was set up to avoid.
+2. **The illegal transitions are the interesting part.** You cannot reach a round without
+   a funded entry. You cannot settle without a round. A back gesture out of a *paid* round
+   is not a thing that can happen, because there is no stack to pop — and allowing it
+   would be a refund button wearing a back arrow. These are unreachable by construction
+   rather than by remembering not to push the wrong screen. Most of the 11 reducer tests
+   assert that something *cannot* happen.
+3. **Two fewer native modules** (`react-native-screens`, `react-native-gesture-handler`)
+   in a build that already required seven distinct fixes to get through Gradle 9.
+
+**What it costs.** No transition animations, no deep links, no free hardware back button.
+For four screens, one of which is a fullscreen game, that is a good trade. A fifth screen
+would not change it; a tab bar would.
+
+**Related: exactly one file can spend money.** `App.tsx` makes every API call; screens are
+given data and callbacks and render. `enter` and `submit` are the calls that move money,
+and having one file able to issue them makes *"can this charge twice?"* a question you
+answer by reading one screen of code rather than auditing four.
+
+---
+
+## D-017 — Firebase JS SDK against a demo project
+
+**Call.** The `firebase` JS SDK, not `@react-native-firebase`. Project ID
+`demo-skill-trial`, which the Firebase emulators treat as fully offline.
+
+**Why.** Creating a real Firebase project failed on a Google Cloud **per-account project
+quota**. `@react-native-firebase` requires a `google-services.json` that only a real
+project can issue, so it was not available. The JS SDK takes a plain config object and an
+explicit emulator host, so the app runs from a clean clone with no cloud project, no
+service account, and no native rebuild. The brief does not require a deployed backend.
+
+**What it costs, stated plainly.** Auth persistence goes through `AsyncStorage` rather
+than the native keychain, and there is no native crash reporting. For a trial that has to
+be checked out and run by someone else on a machine I do not control, "it works from a
+clean clone" wins.
+
+**One thing worth knowing.** `getReactNativePersistence` exists at runtime but is
+invisible to TypeScript, because `@firebase/auth`'s exports map lists a top-level
+`"types"` key *before* the `"react-native"` condition, so type resolution stops before it
+reaches the RN typings. `app/src/types/firebase-auth-rn.d.ts` augments the module with the
+one missing declaration and explains why, rather than `as any` at the call site — which
+would have hidden the same gap without explaining it. Without that persistence the app
+falls back to *memory*, which in a cash app means the player's balance appears to vanish
+on every cold start.
+
+---
+
+## D-018 — What was cut
+
+The brief asks for this explicitly, and asks that the *game* not be what gets cut.
+
+**Cut deliberately.**
+
+- **Pop Shot (Section 3).** Explicitly bonus, and explicitly gated on Sections 1 and 2
+  being finished *and polished*. They are not polished. Building a second game while the
+  first has no audio would be optimising for the wrong 10%.
+- **A deployed backend.** Blocked by the Cloud project quota (D-017), and not required.
+- **Rate limiting, device attestation, bot detection.** Named in D-015 rather than
+  half-built. A token defence that catches nothing is worse than a documented gap.
+- **Cross-game skill priors.** Discussed in D-013, not built.
+- **Withdrawals as a user-facing flow.** The ledger supports `withdraw`; there is no
+  screen. Deposits demonstrate the money path; withdrawal adds a screen and no new
+  property.
+- **Transition animations and deep links.** Consequence of D-016.
+
+**Not finished, which is different from cut.**
+
+- Sound effects and haptics in Chicken Run. This is the one that most affects *game
+  feel*, which is 25% of the score. It is a genuine gap, not a decision.
+- Art assets and prefabs — the game renders with primitives and materials.
+- Device testing of touch input, frame pacing and the release APK.
+
+---
+
+## D-019 — What I'd build next, in order
+
+1. **Record reach separately from score.** The uncensored skill signal from D-014.
+   Schema, simulation, settlement, engine, tests. It is the difference between a target
+   engine that adapts and one that has a stable wrong answer.
+2. **Audio and haptics in Chicken Run.** Highest ratio of perceived quality to effort in
+   the whole project, and it is 25% of the score.
+3. **A partial trace with each heartbeat.** Closes threat 1 in D-015 and makes the
+   abandoned-round path verifiable rather than merely bounded.
+4. **Rate limiting on quote and enter.** Cheap, and its absence is embarrassing rather
+   than dangerous.
+5. **Real archetype weights.** Replace the estimated population in the harness with
+   measured behaviour and re-tune. Everything in D-012 is conditional on that estimate.
+6. **Pop Shot**, once 1–4 are done — mostly because a second game is the strongest
+   possible test of the claim in D-013 that adding one does not touch the money path.
+
+---
+
+## D-020 — Where I leaned on AI, and where I deliberately did not
+
+The brief asks this directly, so here is the honest version rather than the flattering
+one.
+
+**This was built with heavy AI assistance throughout** — Claude, used as a pair, for
+essentially the whole build. Pretending otherwise would be both dishonest and easy to
+disprove from the commit cadence.
+
+**Where it did the most good.**
+
+- **Toolchain archaeology.** Gradle 9 removed `jcenter()` and `Project.exec()`, changed
+  closure scoping inside `android { }`, and the Unity Android export interacts with all
+  three. Seven distinct failures, several with error messages that name the wrong cause —
+  `[CXX1100]` was actually an `ndkVersion`/`ndkPath` desync caused by a "fix" of mine.
+  This is exactly the work where fast hypothesis generation pays.
+- **The C# port of the simulation.** A line-for-line port of ~600 lines of integer logic
+  between two languages is mechanical, tedious and unforgiving — the ideal shape for it.
+- **Boilerplate and prose.** Schema scaffolding, screen layout, this document.
+
+**Where I deliberately did not trust it, and what I did instead.**
+
+- **The money invariants.** Every one of them is proven by an executing test against a
+  real Postgres 17, not by reading the code and agreeing with it. Idempotency is proven
+  under genuine concurrency (`Promise.all`, six racing submits, a submit racing the
+  sweeper), because a code review cannot see a race and an AI reading its own output
+  least of all.
+- **The exploit hunt.** Three real exploits were found by *writing the test that
+  reproduced them*, not by inspection — a target below 1 making break-even round to 0;
+  the percentile ratchet being farmable by banking early 75% of the time; and my own first
+  fix for that being worse, because it used the window maximum, so one fluke run of 400
+  spiked the floor to 180. Each of those looked correct on the page.
+- **The determinism claim.** "The C# and JS simulations agree" is not something to assert
+  from having written both. It is verified by exporting 500 traces from JS and replaying
+  them in Unity, comparing score, end reason, tick count and furthest row — and the one
+  refactor that touched it was proved behaviour-neutral by the export coming back
+  byte-identical.
+- **The economics.** The RTP number was **measured, not chosen**. The harness calls the
+  shipping engine rather than a model of it, precisely so that the numbers cannot be
+  flattered by a second implementation that agrees with the first because the same author
+  wrote both. It immediately contradicted a config that looked entirely reasonable on the
+  page — the target *was* break-even and no disciplined player could ever profit — and
+  the clear-rate fix that read as principled turned out to oscillate rather than converge,
+  and was reverted.
+
+**The pattern.** AI was trusted for things that fail loudly — a build that does not
+compile, a port that does not match. It was not trusted for things that fail silently:
+concurrency, money, and any number I would have to defend. Those all have an executing
+check behind them, and in three cases the check disagreed with the code.
