@@ -1048,3 +1048,47 @@ nothing to say about the fact that it was white, because it cannot see.
 **What I did not do.** No textures, no shadows, no particle effects, no imported
 art. The world is still made of the same two meshes it was made of before, and a
 reviewer can still read every shape in the frame back to a line in `Props.cs`.
+
+---
+
+## D-027 — Making the game easier moved the tuning numbers by exactly zero
+
+The traffic rework (clearance invariant, speeds cut from 2–5.5 cells/s to
+1.2–2.8) makes Chicken Run substantially easier. I re-ran the harness expecting
+to have to retune, and got the shipped report back **line for line** — same mean
+reach per archetype, same RTP, same 86.4% headline.
+
+That is not a bug in the harness. It is D-025's tradeoff arriving in person.
+
+**Chicken Run's synthetic players model reach; they do not play the game.** Where
+a human chooses to stop is the thing being modelled, and that has no algorithm —
+so the population draws a reach from a skill distribution and a cash-out policy
+from an archetype, and never touches `simulate()`. Pop Shot's players, which
+have no such choice to model, run the real simulation. So a difficulty change is
+visible to the Pop Shot harness and invisible to the Chicken Run one, **by
+construction**.
+
+**Why I did not "fix" it.** Two reasons, and the second is the one that decides
+it.
+
+Making the Chicken Run population play the real sim would mean writing a bot
+that decides *when to cash out* — which is the human judgement the whole mode is
+built on, and a bot's answer to it would be a fiction I invented, dressed up as
+a measurement. The current model is honest about being a model.
+
+More importantly, **the economics do not depend on absolute difficulty.** The
+target is a percentile of each player's own history, and the curve is relative
+to that target. Make the game twice as easy and every player's reach doubles,
+their target doubles behind it, and the RTP is unchanged. That property is the
+reason the engine was built per-player in the first place (D-013), and this is
+the first evidence I have that it actually holds — an easier game did not become
+a more generous one.
+
+**What it does mean.** Two things a reviewer should hold me to:
+
+- The Chicken Run harness measures the *engine*, not the *game*. It cannot catch
+  a difficulty regression, and I should not claim it can.
+- A difficulty change still needs a human to play it. Every defect in this pass —
+  the moving wall of traffic, the stale world, the trees over the roads — was
+  found by playing on a phone and looking, and the harness would have reported
+  86.4% throughout.
