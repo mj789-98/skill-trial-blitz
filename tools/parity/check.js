@@ -25,7 +25,10 @@
 const fs = require('fs');
 const path = require('path');
 
-const { simulate } = require('../../functions/sim/chickenRun');
+// Resolved through the SAME registry the server uses, so a game that parity
+// can check is by construction a game the server can validate. A second lookup
+// table here would be a second thing to forget to update.
+const { validatorFor } = require('../../functions/sim');
 
 const CASES_PATH = path.join(__dirname, 'cases.json');
 
@@ -49,27 +52,34 @@ function main() {
   const failures = [];
   const reasons = new Map();
 
+  const byGame = new Map();
+
   for (let i = 0; i < cases.length; i++) {
-    const { seed, trace, expected } = cases[i];
+    // Older case files predate Pop Shot and carry no game field.
+    const { seed, trace, expected, game = 'chicken_run' } = cases[i];
+    byGame.set(game, (byGame.get(game) || 0) + 1);
 
     let actual;
     try {
-      actual = simulate(seed, trace);
+      actual = validatorFor(game).simulate(seed, trace);
     } catch (err) {
-      failures.push({ i, seed, trace, expected, error: err.message });
+      failures.push({ i, game, seed, trace, expected, error: err.message });
       continue;
     }
 
-    reasons.set(actual.reason, (reasons.get(actual.reason) || 0) + 1);
+    reasons.set(`${game}:${actual.reason}`, (reasons.get(`${game}:${actual.reason}`) || 0) + 1);
 
+    // Every key C# recorded, not a fixed list. Each game reports different
+    // fields — furthestRow for Chicken Run, baskets and swishes for Pop Shot —
+    // and a hard-coded list would silently stop checking the new ones.
     const diff = {};
-    for (const key of ['score', 'reason', 'ticks', 'furthestRow', 'inputs']) {
+    for (const key of Object.keys(expected)) {
       if (actual[key] !== expected[key]) {
         diff[key] = { csharp: expected[key], js: actual[key] };
       }
     }
     if (Object.keys(diff).length > 0) {
-      failures.push({ i, seed, trace, diff });
+      failures.push({ i, game, seed, trace, diff });
     }
   }
 
@@ -77,6 +87,9 @@ function main() {
   // same way would pass this check while testing almost nothing — the point is
   // that deaths, idle-outs, cash-outs and abandoned runs all replay identically.
   console.log(`parity: ${cases.length} cases replayed`);
+  console.log(
+    '  games: ' + [...byGame.entries()].sort().map(([k, v]) => `${k}=${v}`).join(', ')
+  );
   console.log(
     '  outcomes: ' +
       [...reasons.entries()]
@@ -100,7 +113,7 @@ function main() {
 
   console.error(`\n  RESULT: ${failures.length} MISMATCH(ES)\n`);
   for (const f of failures.slice(0, 10)) {
-    console.error(`  case ${f.i} seed=${f.seed}`);
+    console.error(`  case ${f.i} game=${f.game} seed=${f.seed}`);
     if (f.error) {
       console.error(`    JS threw: ${f.error}`);
     } else {
