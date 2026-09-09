@@ -79,9 +79,11 @@ namespace SkillApp.EditorTools
             // featureless pill is the loudest possible signal that a game is
             // unfinished. Body, head, beak, comb, wattle, tail, wings and legs
             // is a dozen primitives and no new dependency. See Props.
-            var bodyGo = new GameObject("ChickenModel");
-            Props.BuildChicken(bodyGo.transform, boardMaterial);
-            bodyGo.name = "Body";
+            //
+            // Left EMPTY here on purpose: ChickenView fills it in at runtime,
+            // because Props tints with MaterialPropertyBlocks and those do not
+            // survive being saved into a scene file. See ChickenView.Awake.
+            var bodyGo = new GameObject("Body");
             bodyGo.transform.SetParent(chickenGo.transform, false);
             // No renderer or collider on the root: it is a parent for the parts,
             // and every part was already given the board material by Props. The
@@ -125,7 +127,8 @@ namespace SkillApp.EditorTools
             // private, which is what keeps other code from reaching in at runtime.
             Wire(input, ("game", game));
             Wire(world, ("game", game), ("boardMaterial", boardMaterial));
-            Wire(chickenView, ("game", game), ("body", bodyGo.transform));
+            Wire(chickenView, ("game", game), ("body", bodyGo.transform),
+                ("boardMaterial", boardMaterial));
             Wire(camRig, ("game", game), ("camera", cam));
             Wire(feedback, ("game", game), ("cashOut", cashOut));
             Wire(session,

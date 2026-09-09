@@ -35,6 +35,14 @@ namespace SkillApp.ChickenRun.View
         [SerializeField] private ChickenRunGame game;
         [SerializeField] private Transform body;
 
+        /// <summary>
+        /// The one shared board material, assigned by the scene builder.
+        ///
+        /// Needed here because the model is assembled at RUNTIME rather than
+        /// baked into the scene — see Awake.
+        /// </summary>
+        [SerializeField] private Material boardMaterial;
+
         [Header("Hop")]
         /// <summary>
         /// Duration of the visual arc. Longer than a single tick (20ms) on
@@ -46,12 +54,25 @@ namespace SkillApp.ChickenRun.View
         /// <summary>
         /// Overall size of the chicken model.
         ///
-        /// Was 0.62, which was correct for Unity's capsule primitive — that is
-        /// two units tall, so 0.62 gave a 1.2-unit bird. The hand-built model in
-        /// Props spans about 1.3 units at scale 1, so the same number rendered it
-        /// two-thirds the size it should be and the player was watching a dot.
+        /// Twice now this number has been set from the wrong model. It was 0.62,
+        /// which was right for Unity's capsule primitive — two units tall, so
+        /// 0.62 gave a 1.2-unit bird — and stayed at 0.62 after the capsule
+        /// became the hand-built model in Props, which rendered a dot. Then it
+        /// was 1.45, set by scaling that mistake up rather than by measuring the
+        /// model, and the chicken came out taller than a tree and wider than the
+        /// cell it stands in, wading through the scenery.
+        ///
+        /// So, measured: the Props model spans 1.51 units from the underside of
+        /// its feet to the top of its comb. A bird a little taller than a cell is
+        /// wide reads right in this camera, so 0.80 gives 1.21 units.
+        ///
+        /// GroundOffset below depends on this. Change one, change both.
         /// </summary>
-        [SerializeField] private float bodyScale = 1.45f;
+        [SerializeField] private float bodyScale = 0.80f;
+
+        /// <summary>Distance from the model's origin down to the soles of its feet.</summary>
+        private const float FeetBelowOrigin = 0.54f;
+
 
         [Header("Squash and stretch")]
         [SerializeField] private float launchStretch = 0.28f;
@@ -71,6 +92,28 @@ namespace SkillApp.ChickenRun.View
         {
             game = FindFirstObjectByType<ChickenRunGame>();
             body = transform;
+        }
+
+        /// <summary>
+        /// Build the model here rather than in the scene builder.
+        ///
+        /// Props colours every part with a MaterialPropertyBlock, and a property
+        /// block is runtime state that a saved scene does not carry. So a chicken
+        /// assembled in the editor came back from the scene file with every block
+        /// gone and every part drawing the shared material's own white — comb,
+        /// beak, wattle, legs and eyes included. The result was not obviously
+        /// broken, which is what made it survive: it looked like a deliberately
+        /// white bird, and only the missing red comb gave it away.
+        ///
+        /// Everything else in the renderer is already built at runtime for
+        /// unrelated reasons (pooling), which is exactly why nothing else lost
+        /// its colour. The chicken was the one object built early, so it was the
+        /// one object this could happen to.
+        /// </summary>
+        private void Awake()
+        {
+            if (body == null || body.childCount > 0) return;
+            Props.BuildChicken(body, boardMaterial);
         }
 
         private void OnEnable()
@@ -143,7 +186,11 @@ namespace SkillApp.ChickenRun.View
             // Height is a parabola peaking mid-hop.
             float height = hopping ? Mathf.Sin(t * Mathf.PI) * hopHeight : 0f;
 
-            body.position = new Vector3(x, height + 0.35f, z);
+            // Stand ON the ground rather than near it. The old constant 0.35 was
+            // measured against a capsule and left the current model's feet below
+            // the row surface, so the chicken looked planted in the grass.
+            body.position = new Vector3(
+                x, height + WorldView.GroundY + FeetBelowOrigin * bodyScale, z);
 
             ApplySquash(t, hopping);
             ApplyFacing();
