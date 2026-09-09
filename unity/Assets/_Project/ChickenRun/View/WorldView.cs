@@ -98,6 +98,28 @@ namespace SkillApp.ChickenRun.View
         /// </summary>
         internal const float GroundY = 0.5f;
 
+        /// <summary>
+        /// The seed the cached rows were built from.
+        ///
+        /// Rows are keyed by row INDEX and built once, on the assumption that
+        /// row 7 is always row 7. That assumption is false across rounds: a new
+        /// round brings a new seed, and row 7 of the new world is a different
+        /// row entirely.
+        ///
+        /// Without this check, every round after the first drew a world that was
+        /// half stale — the static dressing (trees, road markings, rails, banks)
+        /// came from the PREVIOUS seed while the row colours, the traffic and,
+        /// crucially, the SIMULATION all came from the new one. So a grass field
+        /// wore road markings, and a tree stood on a cell the simulation
+        /// considered empty: the chicken hopped straight through the tree, and
+        /// was refused by a patch of clear grass somewhere else.
+        ///
+        /// It only ever affected round two onwards, which is why it survived
+        /// every single-round test.
+        /// </summary>
+        private uint _rowsSeed;
+        private bool _rowsSeeded;
+
         private readonly Dictionary<int, GameObject> _rows = new Dictionary<int, GameObject>();
         private readonly Stack<GameObject> _rowPool = new Stack<GameObject>();
         private readonly List<GameObject> _movers = new List<GameObject>();
@@ -157,6 +179,15 @@ namespace SkillApp.ChickenRun.View
 
         private void Redraw(Sim.State state)
         {
+            // A new seed is a new world; nothing cached about the old one is
+            // valid, including rows that happen to share an index.
+            if (!_rowsSeeded || _rowsSeed != state.Seed)
+            {
+                RecycleAllRows();
+                _rowsSeed = state.Seed;
+                _rowsSeeded = true;
+            }
+
             int centre = state.Row;
             // NOT clamped at row 0. The board starts at row 0 but the camera can
             // see well behind it, and clamping left the bottom-right of the frame
@@ -191,6 +222,17 @@ namespace SkillApp.ChickenRun.View
 
             RedrawMovers(state, from, to);
             TintRows(state);
+        }
+
+        /// <summary>Return every live row to the pool, so all of them rebuild.</summary>
+        private void RecycleAllRows()
+        {
+            foreach (var kv in _rows)
+            {
+                kv.Value.SetActive(false);
+                _rowPool.Push(kv.Value);
+            }
+            _rows.Clear();
         }
 
         private GameObject BuildRow(uint seed, int row)
