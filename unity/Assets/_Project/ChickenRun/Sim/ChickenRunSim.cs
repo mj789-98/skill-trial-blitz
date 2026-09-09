@@ -188,27 +188,48 @@ namespace SkillApp.ChickenRun.Simulation
             public int LengthSub;
         }
 
+        /// <summary>
+        /// Clear road guaranteed between one vehicle and the next, in sub-units.
+        /// See the JS twin for why this exists; four two-cell trucks on a
+        /// nine-cell lane used to leave a quarter of a cell between them.
+        /// </summary>
+        public const int MinRoadClearSub = 2 * Sub;
+
+        /// <summary>
+        /// The same for a river, but smaller. On a road the gap is safety; on a
+        /// river the LOG is safety and the gap is the hazard.
+        /// </summary>
+        public const int MinRiverClearSub = 1 * Sub;
+
         public static Lane LaneTraffic(uint seed, int row, int kind)
         {
             var rng = new Rng(RowSeed(seed, row) ^ (kind == RowRoad ? 0x1b873593u : 0xcc9e2d51u));
 
             var lane = new Lane { Dir = rng.Below(2) == 0 ? 1 : -1 };
 
+            // Length is drawn BEFORE count, and count is bounded by what the
+            // lane can hold at that length, so the clearance is an invariant of
+            // the generator. The draw order is part of the contract with the JS
+            // twin: swap these two and every seed generates a different world.
             if (kind == RowRoad)
             {
-                lane.Count = 2 + rng.Below(3);
-                lane.Speed = 40 + rng.Below(71);
+                lane.LengthSub = (1 + rng.Below(2)) * Sub;
+                int maxCount = TrackSub / (lane.LengthSub + MinRoadClearSub);
+                lane.Count = 1 + rng.Below(maxCount);
+                lane.Speed = 24 + rng.Below(33);
                 lane.Gap = TrackSub / lane.Count;
                 lane.Offset = rng.Below(TrackSub);
-                lane.LengthSub = (1 + rng.Below(2)) * Sub;
                 return lane;
             }
 
-            lane.Count = 2 + rng.Below(2);
-            lane.Speed = 20 + rng.Below(41);
+            lane.LengthSub = (2 + rng.Below(2)) * Sub;
+            int maxLogs = TrackSub / (lane.LengthSub + MinRiverClearSub);
+            // At least two, always: a one-log river is crossable only by waiting
+            // for it to come round, and the idle rule ends the round first.
+            lane.Count = 2 + rng.Below(maxLogs - 1 > 1 ? maxLogs - 1 : 1);
+            lane.Speed = 16 + rng.Below(25);
             lane.Gap = TrackSub / lane.Count;
             lane.Offset = rng.Below(TrackSub);
-            lane.LengthSub = (2 + rng.Below(2)) * Sub;
             return lane;
         }
 

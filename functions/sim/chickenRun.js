@@ -201,11 +201,42 @@ function grassObstacleMask(seedUint32, row) {
 }
 
 /**
+ * Clear road guaranteed between the back of one vehicle and the front of the
+ * next, in sub-units.
+ *
+ * This exists because the first version chose a vehicle COUNT and derived the
+ * gap from it, which let the two choices contradict each other: four trucks two
+ * cells long on a nine-cell lane left a quarter of a cell of tarmac between
+ * them. That is not a hard road, it is a wall that happens to be moving, and no
+ * amount of timing gets a player across it.
+ *
+ * Two cells is the smallest gap a player can actually read at a glance and
+ * commit to — one cell to land in and one cell of margin for the hop they are
+ * about to take next.
+ */
+const MIN_ROAD_CLEAR_SUB = 2 * SUB;
+
+/**
+ * The same idea for a river, but smaller, and for the opposite reason.
+ *
+ * On a road the gap is where the player is safe. On a river the LOG is where
+ * the player is safe and the gap is the hazard, so a generous gap makes a river
+ * harder rather than easier. One cell of water between logs is enough to read
+ * them as separate objects without turning the row into a coin flip.
+ */
+const MIN_RIVER_CLEAR_SUB = 1 * SUB;
+
+/**
  * The moving contents of a lane — cars on a road, logs on a river.
  *
  * Returned as parameters, not positions: every body on the lane sits at
  *   pos_i(tick) = (offset + i*gap + dir*speed*tick) mod TRACK_SUB
  * which is closed-form, so nothing accumulates and nothing can drift.
+ *
+ * Length is drawn BEFORE count, and count is bounded by what the lane can hold
+ * at that length. That ordering is the whole point: it makes the clearance an
+ * invariant of the generator rather than something to hope for. A lane of long
+ * trucks is a lane of FEW trucks, automatically.
  */
 function laneTraffic(seedUint32, row, kind) {
   const rng = mulberry32(rowSeed(seedUint32, row) ^ (kind === ROW_ROAD ? 0x1b873593 : 0xcc9e2d51));
@@ -213,29 +244,40 @@ function laneTraffic(seedUint32, row, kind) {
   const dir = below(rng, 2) === 0 ? 1 : -1;
 
   if (kind === ROW_ROAD) {
-    const count = 2 + below(rng, 3); // 2..4 vehicles
+    // Vehicles are 1 or 2 cells long (car vs. truck).
+    const lengthSub = (1 + below(rng, 2)) * SUB;
+    const maxCount = Math.floor(TRACK_SUB / (lengthSub + MIN_ROAD_CLEAR_SUB));
+    const count = 1 + below(rng, maxCount);
     return {
       dir,
       count,
-      // 40..110 sub-units/tick — about 2 to 5.5 cells a second.
-      speed: 40 + below(rng, 71),
+      // 24..56 sub-units/tick — about 1.2 to 2.8 cells a second.
+      //
+      // Was 2 to 5.5. The top of that range crossed the whole board in under
+      // two seconds, which is faster than a player can look at a lane, decide,
+      // and tap — so the only way through a fast lane was luck.
+      speed: 24 + below(rng, 33),
       gap: Math.floor(TRACK_SUB / count),
       offset: below(rng, TRACK_SUB),
-      // Vehicles are 1 or 2 cells long (car vs. truck).
-      lengthSub: (1 + below(rng, 2)) * SUB,
+      lengthSub,
     };
   }
 
   // River: logs, which are platforms rather than hazards.
-  const count = 2 + below(rng, 2); // 2..3 logs
+  const lengthSub = (2 + below(rng, 2)) * SUB; // 2..3 cells long
+  const maxCount = Math.floor(TRACK_SUB / (lengthSub + MIN_RIVER_CLEAR_SUB));
+  // At least two, always. A river with a single log is crossable only by
+  // waiting for it to come round, and the idle rule ends the round in 6.9
+  // seconds — so a one-log river could be an unavoidable death.
+  const count = 2 + below(rng, Math.max(1, maxCount - 1));
   return {
     dir,
     count,
     // Logs are slower than cars, so being carried is survivable.
-    speed: 20 + below(rng, 41),
+    speed: 16 + below(rng, 25),
     gap: Math.floor(TRACK_SUB / count),
     offset: below(rng, TRACK_SUB),
-    lengthSub: (2 + below(rng, 2)) * SUB, // 2..3 cells long
+    lengthSub,
   };
 }
 
@@ -567,6 +609,8 @@ module.exports = {
   IDLE_GRACE_TICKS,
   IDLE_STEP_TICKS,
   IDLE_LEAD_ROWS,
+  MIN_ROAD_CLEAR_SUB,
+  MIN_RIVER_CLEAR_SUB,
   ROW_GRASS,
   ROW_ROAD,
   ROW_RAIL,

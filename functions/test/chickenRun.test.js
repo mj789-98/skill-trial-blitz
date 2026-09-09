@@ -224,7 +224,7 @@ test('lane bodies stay on the track and wrap cleanly', () => {
       const kind = rowTypeAt(seed, row);
       if (kind !== sim.ROW_ROAD && kind !== sim.ROW_RIVER) continue;
       const lane = laneTraffic(seed, row, kind);
-      assert.ok(lane.count >= 2);
+      assert.ok(lane.count >= 1);
       assert.ok(lane.speed > 0);
       for (let t = 0; t < 400; t += 7) {
         for (let i = 0; i < lane.count; i++) {
@@ -233,6 +233,57 @@ test('lane bodies stay on the track and wrap cleanly', () => {
           assert.ok(p >= 0 && p < TRACK_SUB, `lane position ${p} left the track`);
         }
       }
+    }
+  }
+});
+
+test('a lane is never a moving wall', () => {
+  // The bug this pins: the generator used to choose a vehicle COUNT and derive
+  // the gap from it, so four two-cell trucks on a nine-cell lane left a quarter
+  // of a cell of road between them. A gap that small is not a hard lane, it is
+  // an impassable one, and no amount of timing gets a player through it.
+  //
+  // Asserted as a property of every lane the generator can produce rather than
+  // as a bound on count, because count is not the thing that matters — the
+  // clear space between bodies is.
+  for (let s = 1; s <= 200; s++) {
+    const seed = sim.parseSeed(String(s));
+    for (let row = 3; row < 80; row++) {
+      const kind = rowTypeAt(seed, row);
+      if (kind !== sim.ROW_ROAD && kind !== sim.ROW_RIVER) continue;
+
+      const lane = laneTraffic(seed, row, kind);
+      const clear = lane.gap - lane.lengthSub;
+      const required =
+        kind === sim.ROW_ROAD ? sim.MIN_ROAD_CLEAR_SUB : sim.MIN_RIVER_CLEAR_SUB;
+
+      assert.ok(
+        clear >= required,
+        `row ${row} on seed ${s}: ${clear} sub of clearance, needs ${required}`
+      );
+    }
+  }
+});
+
+test('a lane is slow enough to read before you commit to it', () => {
+  // A body must not cross the whole board faster than a player can look at the
+  // lane, decide, and tap. Three seconds is the floor; the old ceiling of 110
+  // sub-units a tick crossed in 1.6s, which made a fast lane a coin flip.
+  const MIN_CROSSING_TICKS = 3 * sim.TICK_HZ;
+
+  for (let s = 1; s <= 200; s++) {
+    const seed = sim.parseSeed(String(s));
+    for (let row = 3; row < 80; row++) {
+      const kind = rowTypeAt(seed, row);
+      if (kind !== sim.ROW_ROAD && kind !== sim.ROW_RIVER) continue;
+
+      const lane = laneTraffic(seed, row, kind);
+      const crossingTicks = TRACK_SUB / lane.speed;
+
+      assert.ok(
+        crossingTicks >= MIN_CROSSING_TICKS,
+        `row ${row} on seed ${s} crosses in ${(crossingTicks / sim.TICK_HZ).toFixed(2)}s`
+      );
     }
   }
 });
