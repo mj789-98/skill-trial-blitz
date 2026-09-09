@@ -52,9 +52,9 @@ namespace SkillApp.EditorTools
             const float courtW = (float)Sim.CourtW / Sim.Sub;
             const float courtH = (float)Sim.CourtH / Sim.Sub;
 
-            // Frame the full court height, centred. orthographicSize is HALF the
-            // height, and the court is taller than it is wide on a portrait
-            // screen, so height is the binding dimension.
+            // A starting value only. PopShotView re-derives this every frame from
+            // the real aspect ratio, because WIDTH is the binding dimension in
+            // portrait and the editor's Game view is not the phone's shape.
             cam.orthographicSize = courtH * 0.5f;
             camGo.transform.position = new Vector3(courtW * 0.5f, courtH * 0.5f, -20f);
             camGo.transform.rotation = Quaternion.identity;
@@ -88,7 +88,7 @@ namespace SkillApp.EditorTools
 
             // ── Wiring ───────────────────────────────────────────────────────
             Wire(input, ("game", game));
-            Wire(view, ("game", game), ("boardMaterial", boardMaterial));
+            Wire(view, ("game", game), ("camera", cam), ("boardMaterial", boardMaterial));
             Wire(feedback, ("game", game));
             Wire(hud, ("game", game), ("scoreLabel", scoreLabel),
                 ("clockLabel", clockLabel), ("hintLabel", hintLabel));

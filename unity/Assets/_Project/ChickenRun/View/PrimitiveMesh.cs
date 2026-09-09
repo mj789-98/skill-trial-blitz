@@ -143,5 +143,102 @@ namespace SkillApp.ChickenRun.View
 
             return go;
         }
+        private static Mesh _sphere;
+
+        /// <summary>
+        /// A unit-diameter UV sphere, for the one thing in either game that must
+        /// not be a cube.
+        ///
+        /// Chicken Run is blocky on purpose and a cube reads as a chicken there.
+        /// A basketball does not survive the same treatment: rendered by an
+        /// orthographic camera dead-on, a cube is a perfect square, and a square
+        /// basketball is the first thing anyone notices.
+        ///
+        /// Built here for the same reason the cube is — GameObject.CreatePrimitive
+        /// attaches a collider, and the Physics module is stripped from player
+        /// builds. See Cube() for the crash that causes.
+        ///
+        /// 16 segments and 12 rings: enough that the silhouette reads as round at
+        /// the size a ball is drawn, and few enough to stay a trivial mesh.
+        /// </summary>
+        public static Mesh Sphere()
+        {
+            if (_sphere != null) return _sphere;
+
+            const int segments = 16;
+            const int rings = 12;
+            const float r = 0.5f;
+
+            var vertices = new Vector3[(rings + 1) * (segments + 1)];
+            var normals = new Vector3[vertices.Length];
+            var uvs = new Vector2[vertices.Length];
+
+            int v = 0;
+            for (int y = 0; y <= rings; y++)
+            {
+                float phi = Mathf.PI * y / rings;         // 0..pi, pole to pole
+                float sinPhi = Mathf.Sin(phi);
+                float cosPhi = Mathf.Cos(phi);
+
+                for (int x = 0; x <= segments; x++)
+                {
+                    float theta = 2f * Mathf.PI * x / segments;
+                    var n = new Vector3(sinPhi * Mathf.Cos(theta), cosPhi, sinPhi * Mathf.Sin(theta));
+
+                    vertices[v] = n * r;
+                    // A sphere centred on the origin has position and normal
+                    // pointing the same way, so the normal is the direction.
+                    normals[v] = n;
+                    uvs[v] = new Vector2((float)x / segments, 1f - (float)y / rings);
+                    v++;
+                }
+            }
+
+            var triangles = new int[rings * segments * 6];
+            int t = 0;
+            for (int y = 0; y < rings; y++)
+            {
+                for (int x = 0; x < segments; x++)
+                {
+                    int a = y * (segments + 1) + x;
+                    int b = a + segments + 1;
+
+                    triangles[t++] = a;
+                    triangles[t++] = b;
+                    triangles[t++] = a + 1;
+
+                    triangles[t++] = a + 1;
+                    triangles[t++] = b;
+                    triangles[t++] = b + 1;
+                }
+            }
+
+            _sphere = new Mesh
+            {
+                name = "SharedSphere",
+                vertices = vertices,
+                normals = normals,
+                uv = uvs,
+                triangles = triangles,
+            };
+            _sphere.RecalculateBounds();
+            _sphere.UploadMeshData(true);
+
+            return _sphere;
+        }
+
+        /// <summary>A renderable sphere GameObject: mesh, renderer, no physics.</summary>
+        public static GameObject SphereObject(string name, Material material)
+        {
+            var go = new GameObject(name, typeof(MeshFilter), typeof(MeshRenderer));
+            go.GetComponent<MeshFilter>().sharedMesh = Sphere();
+
+            var renderer = go.GetComponent<MeshRenderer>();
+            renderer.sharedMaterial = material;
+            renderer.shadowCastingMode = UnityEngine.Rendering.ShadowCastingMode.Off;
+            renderer.receiveShadows = false;
+
+            return go;
+        }
     }
 }

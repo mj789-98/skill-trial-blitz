@@ -22,6 +22,7 @@ namespace SkillApp.PopShot.View
     public class PopShotView : MonoBehaviour
     {
         [SerializeField] private PopShotGame game;
+        [SerializeField] private new Camera camera;
         [SerializeField] private Material boardMaterial;
 
         [Header("Palette")]
@@ -54,8 +55,9 @@ namespace SkillApp.PopShot.View
             _rimLeft = Build("RimLeft", rimColor);
             _rimRight = Build("RimRight", rimColor);
             _net = Build("Net", netColor);
-            _ball = Build("Ball", ballColor);
-            _ghost = Build("BallWrapped", ballColor);
+            // Round, unlike everything else. See PrimitiveMesh.Sphere.
+            _ball = BuildRound("Ball", ballColor);
+            _ghost = BuildRound("BallWrapped", ballColor);
 
             // A court line, purely so the eye has something to measure the ball
             // against. Without it the ball appears to hang in a void.
@@ -71,6 +73,14 @@ namespace SkillApp.PopShot.View
             // stripped from player builds and CreatePrimitive attaches a collider.
             // See PrimitiveMesh for the crash this avoids.
             var go = PrimitiveMesh.CubeObject(name, boardMaterial);
+            go.transform.SetParent(_root, false);
+            Tint(go, color);
+            return go;
+        }
+
+        private GameObject BuildRound(string name, Color color)
+        {
+            var go = PrimitiveMesh.SphereObject(name, boardMaterial);
             go.transform.SetParent(_root, false);
             Tint(go, color);
             return go;
@@ -92,8 +102,38 @@ namespace SkillApp.PopShot.View
             var state = game != null ? game.State : null;
             if (state == null) return;
 
+            FrameCourt();
             LayoutCourt(state);
             LayoutBall(state);
+        }
+
+        /// <summary>
+        /// Fit the whole court width on screen.
+        ///
+        /// orthographicSize is HALF the view HEIGHT, and on a 9:20 phone framing
+        /// by height crops the sides: the court is 9 units wide and a 16-unit
+        /// view is only 7.2 units across. The first device build lost nearly two
+        /// columns off the left, taking most of the floor with them.
+        ///
+        /// Width is the binding dimension in portrait, so size is derived from it
+        /// — the same reasoning as Chicken Run's CameraRig, and re-derived every
+        /// frame so a resize cannot crop the court back out of view.
+        /// </summary>
+        private void FrameCourt()
+        {
+            if (camera == null) return;
+
+            float aspect = camera.aspect > 0.01f ? camera.aspect : 0.5f;
+            float size = (Sim.CourtW * Scale * 0.5f) / aspect;
+
+            // Never smaller than the court is tall, or a very wide screen would
+            // crop the hoop off the top instead.
+            camera.orthographicSize = Mathf.Max(size, Sim.CourtH * Scale * 0.5f);
+
+            camera.transform.position = new Vector3(
+                Sim.CourtW * Scale * 0.5f,
+                Sim.CourtH * Scale * 0.5f,
+                -20f);
         }
 
         /// <summary>
@@ -107,8 +147,12 @@ namespace SkillApp.PopShot.View
             float rimHalf = Sim.RimHalf * Scale;
             float postD = Sim.PostR * 2f * Scale;
 
-            _floor.transform.localScale = new Vector3(Sim.CourtW * Scale, 0.5f, 1f);
-            _floor.transform.localPosition = new Vector3(Sim.CourtW * Scale * 0.5f, -0.25f, 0.2f);
+            // Meets the ball's resting height exactly, so the ball sits ON the
+            // floor rather than hovering above a slab.
+            float floorTop = Sim.FloorY * Scale - Sim.BallR * Scale;
+            _floor.transform.localScale = new Vector3(Sim.CourtW * Scale, 1.2f, 1f);
+            _floor.transform.localPosition =
+                new Vector3(Sim.CourtW * Scale * 0.5f, floorTop - 0.6f, 0.2f);
 
             _rimLeft.transform.localScale = new Vector3(postD, postD, postD);
             _rimLeft.transform.localPosition = new Vector3(hoopX - rimHalf, hoopY, 0f);
@@ -119,8 +163,12 @@ namespace SkillApp.PopShot.View
             // The net is decoration, and deliberately BEHIND the ball in z so a
             // ball dropping through is drawn in front of it. Nothing in the
             // simulation knows it exists.
-            _net.transform.localScale = new Vector3(rimHalf * 2f, 0.55f, 0.05f);
-            _net.transform.localPosition = new Vector3(hoopX, hoopY - 0.3f, 0.3f);
+            // Narrower than the rim and thin: a hanging net, not a shelf. The
+            // first version was as wide as the opening and read as a solid
+            // surface the ball ought to bounce off, which is a lie about the
+            // rules.
+            _net.transform.localScale = new Vector3(rimHalf * 1.5f, 0.5f, 0.04f);
+            _net.transform.localPosition = new Vector3(hoopX, hoopY - 0.28f, 0.35f);
 
             float boardX = Sim.BoardX(state) * Scale;
             _board.transform.localScale =
