@@ -88,6 +88,15 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
   // send one ROUND_END, but this component sits on the boundary with a process
   // that may be tampered with, so it enforces the invariant rather than trusting
   // it: a duplicate here would become a duplicate submit upstream.
+  //
+  // Reset when a START_ROUND goes out, NOT on mount. This component now lives
+  // for the whole app session (see RoundScreen's header), so a latch that only
+  // cleared on mount would clear exactly once — and every round after the first
+  // would have its ROUND_END silently swallowed. The player would watch Unity's
+  // own death overlay sit there while React never advanced to the result screen.
+  //
+  // Tying it to START_ROUND is also the honest definition: the latch guards one
+  // round, so it should reset when a round begins.
   const roundEnded = useRef(false);
 
   const handleUnityMessage = useCallback((event: { nativeEvent: { message: string } }) => {
@@ -137,6 +146,8 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
         // the caller retry on the handshake rather than losing a round silently.
         if (!readyRef.current && message.type === 'START_ROUND') return false;
 
+        if (message.type === 'START_ROUND') roundEnded.current = false;
+
         view.postMessage(UNITY_BRIDGE_OBJECT, UNITY_BRIDGE_METHOD, encodeToUnity(message));
         return true;
       },
@@ -167,29 +178,37 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
     // the pause below would silently never happen.
     const view = unityRef.current;
 
-    // Resume, because the LAST round paused it.
+    // Focus, NOT resumeUnity.
     //
-    // The Unity player is a process-wide singleton; this component mounting and
-    // unmounting does not create or destroy it. So the pause in the cleanup
-    // below outlives the component that issued it, and the next round mounts a
-    // fresh UnityHost onto a player that is still suspended: the surface stays
-    // black, no input is processed, and the run quietly idles out and dies
-    // without the player ever seeing a frame.
+    // The Unity player is a process-wide singleton: this component mounting and
+    // unmounting does not create or destroy it. So anything done to the player
+    // on unmount outlives the component that did it, and the next round inherits
+    // that state.
     //
-    // Only the FIRST round of an app session worked, which is exactly the shape
-    // of bug that survives every test and every quick manual check.
+    // The obvious pairing is pauseUnity(true) on unmount and resumeUnity() on
+    // mount. Both halves of that are wrong here, and the device proved it twice:
     //
-    // windowFocusChanged as well: on Android the surface can come back attached
-    // but unfocused, which renders black in a different way.
-    view?.resumeUnity?.();
+    //   - With only the pause, round two mounted onto a still-suspended player:
+    //     black surface, no input, and the run silently idled out. Only the
+    //     FIRST round of an app session ever worked.
+    //   - Adding resumeUnity() to fix that CRASHED the process — SIGTRAP on the
+    //     UnityMain thread, 68ms after the call, every time.
+    //
+    // So the pause/resume pair is not used at all. windowFocusChanged is the
+    // lifecycle signal Unity already handles thousands of times a session (every
+    // app switch, every notification shade pull), which makes it the boring,
+    // well-trodden path rather than the clever one. Unity throttles its own
+    // rendering when unfocused, so the battery argument for pausing is mostly
+    // served anyway.
+    //
+    // Leaving the player running is also what `androidKeepPlayerMounted` is FOR:
+    // pausing it between rounds was quietly fighting the setting that makes
+    // entering a round instant.
     view?.windowFocusChanged?.(true);
 
     return () => {
-      // Unity keeps running behind an unmounted view unless told otherwise,
-      // which burns battery and keeps a GL surface alive behind the React
-      // screens. Pause rather than unload: unloading tears down the player and
-      // makes the next round pay a multi-second reload.
-      view?.pauseUnity?.(true);
+      // Tell Unity it is no longer the focused surface. Not a pause: see above.
+      view?.windowFocusChanged?.(false);
     };
   }, []);
 

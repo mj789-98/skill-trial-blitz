@@ -16,7 +16,7 @@
  * the one place where being wrong costs a real person money.
  */
 
-import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { ActivityIndicator, BackHandler, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
@@ -31,7 +31,8 @@ import {
   type FeedbackSettings,
 } from './api/settings';
 import { initialPhase, practiceSeed, reduce } from './flow/roundFlow';
-import type { GameId, RoundEndMessage } from './unity/protocol';
+import type { GameId, RoundEndMessage, ScoreTickMessage } from './unity/protocol';
+import UnityHost, { type UnityHostHandle } from './unity/UnityHost';
 
 import LobbyScreen from './screens/LobbyScreen';
 import PayoutScreen from './screens/PayoutScreen';
@@ -50,6 +51,18 @@ export default function App() {
   const [error, setError] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<FeedbackSettings>(DEFAULT_SETTINGS);
+
+  // The Unity player, mounted ONCE for the session. See RoundScreen's header for
+  // why it is not mounted per round.
+  const unity = useRef<UnityHostHandle | null>(null);
+  const [unityReady, setUnityReady] = useState(false);
+  // The last progress Unity reported. A ref, because it is read from an AppState
+  // listener that must not be re-subscribed on every tick.
+  const lastProgress = useRef({ score: 0, tick: 0 });
+  // The live phase, for the Unity callbacks — they are registered once and would
+  // otherwise close over the phase as it was at mount.
+  const phaseRef = useRef(phase);
+  phaseRef.current = phase;
 
   // Read once at startup. Unity is told these at the start of every round rather
   // than keeping its own copy — see api/settings.ts.
@@ -139,10 +152,11 @@ export default function App() {
   }, [guarded, phase]);
 
   const heartbeat = useCallback((score: number, tick: number) => {
-    if (phase.name !== 'round' || phase.mode !== 'blitz') return;
+    const current = phaseRef.current;
+    if (current.name !== 'round' || current.mode !== 'blitz') return;
     // Fire and forget by design; see api.heartbeat.
-    api.heartbeat(phase.round.roundId, score, tick);
-  }, [phase]);
+    api.heartbeat(current.round.roundId, score, tick);
+  }, []);
 
   /**
    * The run ended.
@@ -154,14 +168,15 @@ export default function App() {
    */
   const endRound = useCallback(
     (msg: RoundEndMessage) => {
-      if (phase.name !== 'round') return;
+      const current = phaseRef.current;
+      if (current.name !== 'round') return;
 
-      if (phase.mode === 'practice') {
+      if (current.mode === 'practice') {
         dispatch({ type: 'PRACTICE_ENDED', score: msg.score, reason: msg.reason });
         return;
       }
 
-      const roundId = phase.round.roundId;
+      const roundId = current.round.roundId;
       void (async () => {
         setBusy(true);
         try {
@@ -183,7 +198,40 @@ export default function App() {
         }
       })();
     },
-    [phase]
+    []
+  );
+
+  // ── Unity callbacks, registered once ──────────────────────────────────────
+
+  const onUnityScoreTick = useCallback(
+    (msg: ScoreTickMessage) => {
+      lastProgress.current = { score: msg.score, tick: msg.tick };
+      heartbeat(msg.score, msg.tick);
+    },
+    [heartbeat]
+  );
+
+  /**
+   * Unity fell over. If a stake is on the table this still has to produce an
+   * outcome rather than leaving the player on a dead screen.
+   *
+   * Reported as an abort carrying the acknowledged progress and an EMPTY trace.
+   * With nothing to replay, the server settles at the heartbeat it already
+   * bounded by elapsed time, not at anything this client claims. A crash is not
+   * a payout opportunity.
+   */
+  const onUnityError = useCallback(
+    (message: string) => {
+      console.warn('[unity] round aborted:', message);
+      endRound({
+        type: 'ROUND_END',
+        reason: 'aborted',
+        score: lastProgress.current.score,
+        tick: lastProgress.current.tick,
+        trace: '',
+      });
+    },
+    [endRound]
   );
 
   /**
@@ -275,8 +323,10 @@ export default function App() {
             seed={phase.mode === 'blitz' ? phase.round.seed : phase.seed}
             roundId={phase.mode === 'blitz' ? phase.round.roundId : null}
             feedback={feedback}
+            unity={unity}
+            unityReady={unityReady}
+            lastProgress={lastProgress}
             onHeartbeat={heartbeat}
-            onEnded={endRound}
             settling={phase.mode === 'blitz' && busy}
           />
         );
@@ -308,7 +358,6 @@ export default function App() {
   }, [
     busy,
     changeFeedback,
-    endRound,
     enter,
     error,
     fatal,
@@ -323,16 +372,42 @@ export default function App() {
     quote,
     refresh,
     refreshing,
+    unityReady,
   ]);
 
   return (
     <SafeAreaProvider>
       <StatusBar barStyle="light-content" backgroundColor={colors.bg} />
-      {/* The round is edge-to-edge on purpose — Unity draws its own safe area,
-          and letting React inset the game would letterbox it. */}
-      <SafeAreaView style={styles.root} edges={phase.name === 'round' ? [] : ['top', 'bottom']}>
-        {content}
-      </SafeAreaView>
+      <View style={styles.root}>
+        {/*
+          Unity, mounted for the whole session and never unmounted.
+
+          It sits at the BOTTOM of the tree and every other screen is opaque, so
+          it is simply covered when there is no round. That is deliberately dumb:
+          hiding it with display:none, or unmounting it, detaches the surface —
+          and re-attaching is what crashed the player with "Graphics device is
+          null". A view that is merely covered is a view Android never touches.
+        */}
+        <View style={styles.unityLayer} pointerEvents={phase.name === 'round' ? 'auto' : 'none'}>
+          <UnityHost
+            ref={unity}
+            onReady={() => setUnityReady(true)}
+            onScoreTick={onUnityScoreTick}
+            onRoundEnd={endRound}
+            onError={onUnityError}
+          />
+        </View>
+
+        {/* The round is edge-to-edge on purpose — Unity draws its own safe area,
+            and letting React inset the game would letterbox it. */}
+        <SafeAreaView
+          style={phase.name === 'round' ? styles.transparent : styles.root}
+          edges={phase.name === 'round' ? [] : ['top', 'bottom']}
+          pointerEvents="box-none"
+        >
+          {content}
+        </SafeAreaView>
+      </View>
     </SafeAreaProvider>
   );
 }
@@ -364,6 +439,8 @@ function Fatal({ message }: { message: string }) {
 
 const styles = StyleSheet.create({
   root: { flex: 1, backgroundColor: colors.bg },
+  transparent: { flex: 1, backgroundColor: 'transparent' },
+  unityLayer: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0 },
   centre: {
     flex: 1,
     alignItems: 'center',
