@@ -67,9 +67,9 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 2.9 | Idle too long → game ends. **Decide threshold, state it, say why** | DONE — 6.9s, DECISIONS D-004 |
 | 2.10 | No time limit; ends on cash out, death, or idle | DONE |
 | 2.11 | Assets / prefabs | TODO |
-| 2.12 | Sound effects | TODO |
-| 2.13 | Haptics | TODO |
-| 2.14 | **Playable** — smooth, responsive, fun | PARTIAL — renders and plays; no device test, no audio/haptics |
+| 2.12 | Sound effects | DONE — 8 clips, synthesised in code; measured by an editor check that fails the build on silence or clipping |
+| 2.13 | Haptics | DONE — Android VibrationEffect via JNI, per-event duration and amplitude; untested on hardware |
+| 2.14 | **Playable** — smooth, responsive, fun | PARTIAL — plays with sound and haptics; still no device test, no art assets |
 
 ## 3. Blitz — REQUIRED
 
@@ -205,7 +205,7 @@ Only after Chicken Run **and** Blitz are finished and polished.
 | Weight | Dimension | Where we stand |
 |---|---|---|
 | 30% | Correctness & server authority | strong — full loop, 93 backend tests + 16 e2e checks, threat model written |
-| 25% | **Game feel** | **the weak one — it plays, but no audio, no haptics, no device test** |
+| 25% | **Game feel** | improved — audio and haptics in, including a rising pitch ladder; still no device test and no art |
 | 20% | Code quality & architecture | strong |
 | 15% | Product judgement & written reasoning | strong — 20 DECISIONS entries, with harness numbers behind the claims |
 | 10% | Polish & completeness | partial — no art assets, no recording, no release APK |
