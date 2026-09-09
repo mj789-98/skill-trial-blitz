@@ -139,12 +139,16 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
   }, []);
 
   useEffect(() => {
+    // Captured on mount rather than read in the cleanup: by the time cleanup
+    // runs React has already detached the node, so unityRef.current is null and
+    // the pause below would silently never happen.
+    const view = unityRef.current;
     return () => {
       // Unity keeps running behind an unmounted view unless told otherwise,
       // which burns battery and keeps a GL surface alive behind the React
       // screens. Pause rather than unload: unloading tears down the player and
       // makes the next round pay a multi-second reload.
-      unityRef.current?.pauseUnity?.(true);
+      view?.pauseUnity?.(true);
     };
   }, []);
 
