@@ -1092,3 +1092,46 @@ a more generous one.
   the moving wall of traffic, the stale world, the trees over the roads — was
   found by playing on a phone and looking, and the harness would have reported
   86.4% throughout.
+
+---
+
+## D-028 — What the reference footage was actually for
+
+Both games were checked frame by frame against the recordings in the brief.
+Worth separating what I took from them and what I did not, because "matched the
+reference" can mean two very different things.
+
+**What I took: proportion and pacing.** These are measurable, and I had them
+wrong.
+
+| | mine, before | reference | mine, after |
+| --- | --- | --- | --- |
+| Chicken Run camera | 11.5 units across | — | 7.4 x 1.17 |
+| tree height | 1.51 units | ~0.6 of the chicken | 0.72 |
+| chicken height | 1.21 units | shorter than a truck | 0.94 |
+| car speed | 2.0–5.5 cells/s | ~1.5–2 | 1.2–2.8 |
+| clear road between cars | 0.25 cells, worst case | 2+ cells | 2 cells, guaranteed |
+
+The camera one is the most embarrassing and the most instructive: I had framed
+11.5 world units to fit a nine-column board, forgetting the board is yawed 35
+degrees and therefore only 7.4 units wide on screen. The whole game was drawn at
+two thirds size. I did not spot that in a year of looking at my own build; I
+spotted it in ten seconds next to somebody else's.
+
+**What I took from Pop Shot: that the background is load-bearing.** The court is
+9x16 and the ball is under 1% of it, so with an empty background there is
+nothing to judge height against. The reference's street scene is not decoration,
+it is a ruler. Mine now has one.
+
+**What I did not take: the art itself.** No textures, no imported models, no
+attempt to reproduce the reference's rendered 3D city or its painted chicken.
+Everything is still cubes and spheres generated in code from `Props.cs` and
+`PopShotView.cs`, because the deliverable is a build from a clean checkout and
+an asset pipeline is not something I can honestly claim to have built in the
+time. A reviewer can read every shape in either frame back to a line of code.
+
+**And what the comparison was really worth.** Four defects surfaced only because
+I put the two side by side — the framing, the tree height, the moving wall of
+traffic, and the empty Pop Shot court. None of them are things a test can assert
+and none of them were visible to the tuning harness (D-027). Looking at the
+reference was the cheapest debugging tool in the project.
