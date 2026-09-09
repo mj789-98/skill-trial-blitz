@@ -27,6 +27,50 @@ const {
 const AUTH = 'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts';
 const FN = 'http://127.0.0.1:5001/demo-skill-trial/us-central1';
 
+/**
+ * Load functions/.env into this process, the way the emulator loads it into
+ * the Functions runtime.
+ *
+ * Needed because one check reaches into Postgres directly (see below) and this
+ * script is not running inside the Functions runtime, so it has none of the
+ * PG* variables. Values already in the environment win, so a CI runner that
+ * sets them explicitly is not overridden.
+ *
+ * Local development config only — the file is gitignored, and the Supabase
+ * credentials live in a different one that nothing here reads.
+ */
+function loadDotEnv() {
+  const file = path.join(__dirname, '..', '..', 'functions', '.env');
+  let text;
+  try {
+    text = require('fs').readFileSync(file, 'utf8');
+  } catch {
+    return; // not a local checkout; assume the environment is already set
+  }
+
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$/.exec(line);
+    if (!m) continue;
+    const [, key, raw] = m;
+    if (process.env[key] !== undefined) continue;
+    process.env[key] = raw.trim().replace(/^["']|["']$/g, '');
+  }
+}
+
+/**
+ * Flip a game's Blitz toggle directly in Postgres.
+ *
+ * There is deliberately no callable for this — nothing a client can reach
+ * should be able to open a game for real money — so the test reaches past the
+ * API to set up its own precondition, which is the one legitimate reason to do
+ * that. It always puts the flag back.
+ */
+async function setBlitzEnabled(gameId, enabled) {
+  loadDotEnv();
+  const { query } = require(path.join(__dirname, '..', '..', 'functions', 'db'));
+  await query('UPDATE games SET blitz_enabled = $2 WHERE game_id = $1', [gameId, enabled]);
+}
+
 let failures = 0;
 function check(label, ok, detail = '') {
   console.log(`${ok ? '  ok  ' : ' FAIL '} ${label}${detail ? ` — ${detail}` : ''}`);
@@ -105,8 +149,39 @@ async function main() {
   check('listGames returns the stake tiers from the active config',
     Array.isArray(chicken.stakeTiersCents) && chicken.stakeTiersCents.length > 0,
     JSON.stringify(chicken.stakeTiersCents));
-  check('pop_shot is offered with Blitz OFF',
-    games.find((g) => g.game_id === 'pop_shot').blitz_enabled === false);
+  // The Blitz toggle, exercised rather than assumed.
+  //
+  // This check used to assert that pop_shot had Blitz OFF, which was true when
+  // Pop Shot was practice-only and became false the moment it was enabled — so
+  // the check failed for the one reason a check should never fail: the thing it
+  // asserted was a fact about the seed data rather than a property of the code.
+  //
+  // What actually matters is that the flag is honoured: a game with Blitz off
+  // is still listed, and cannot be staked. So the test sets the flag itself,
+  // asserts both halves, and puts it back.
+  const popBefore = games.find((g) => g.game_id === 'pop_shot');
+  check('pop_shot is listed', !!popBefore);
+
+  await setBlitzEnabled('pop_shot', false);
+  const offList = (await call('listGames', {}, idToken)).games;
+  const popOff = offList.find((g) => g.game_id === 'pop_shot');
+  check('a game with Blitz OFF is still offered', !!popOff);
+  check('…and listGames reports the flag truthfully', popOff.blitz_enabled === false);
+
+  let stakeRefused = false;
+  try {
+    await call('blitzQuote', { gameId: 'pop_shot', stakeCents: 100 }, idToken);
+  } catch (err) {
+    stakeRefused = true;
+  }
+  check('…and it cannot be staked while the flag is off', stakeRefused);
+
+  await setBlitzEnabled('pop_shot', popBefore.blitz_enabled);
+  const restored = (await call('listGames', {}, idToken)).games
+    .find((g) => g.game_id === 'pop_shot');
+  check('the toggle is restored to where the seed left it',
+    restored.blitz_enabled === popBefore.blitz_enabled,
+    `blitz_enabled=${restored.blitz_enabled}`);
 
   // Asserted as a DELTA, not an absolute. This script is meant to be re-run
   // against a database that already has history in it, and a check that only
