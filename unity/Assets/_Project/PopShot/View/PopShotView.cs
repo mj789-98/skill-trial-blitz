@@ -41,6 +41,7 @@ namespace SkillApp.PopShot.View
         private GameObject _net;
         private GameObject _board;
         private GameObject _floor;
+        private GameObject _target;
 
         /// <summary>World units per sub-unit. The sim's court is 9x16 sub-thousands.</summary>
         private const float Scale = 1f / Sim.Sub;
@@ -51,13 +52,19 @@ namespace SkillApp.PopShot.View
             _root.SetParent(transform, false);
 
             _floor = Build("Floor", courtColor);
+            // The painted square every backboard has. The fastest way to make a
+            // white slab read as a backboard rather than a wall.
+            _target = Build("BoardTarget", new Color(0.88f, 0.30f, 0.24f));
             _board = Build("Backboard", boardColor);
             _rimLeft = Build("RimLeft", rimColor);
             _rimRight = Build("RimRight", rimColor);
-            _net = Build("Net", netColor);
-            // Round, unlike everything else. See PrimitiveMesh.Sphere.
-            _ball = BuildRound("Ball", ballColor);
-            _ghost = BuildRound("BallWrapped", ballColor);
+            _net = BuildAssembly("Net", t => Props.BuildNet(t, boardMaterial, netColor, 1f));
+            // A basketball, not an orange dot: sphere plus seams. Without them
+            // the ball has no surface detail at all, so its bounce and travel
+            // read as a sliding disc rather than a rolling object.
+            _ball = BuildAssembly("Ball", t => Props.BuildBasketball(t, boardMaterial, ballColor));
+            _ghost = BuildAssembly("BallWrapped",
+                t => Props.BuildBasketball(t, boardMaterial, ballColor));
 
             // A court line, purely so the eye has something to measure the ball
             // against. Without it the ball appears to hang in a void.
@@ -78,11 +85,12 @@ namespace SkillApp.PopShot.View
             return go;
         }
 
-        private GameObject BuildRound(string name, Color color)
+        /// <summary>An empty parent holding a composite prop, scaled like a cube.</summary>
+        private GameObject BuildAssembly(string name, System.Action<Transform> build)
         {
-            var go = PrimitiveMesh.SphereObject(name, boardMaterial);
+            var go = new GameObject(name);
             go.transform.SetParent(_root, false);
-            Tint(go, color);
+            build(go.transform);
             return go;
         }
 
@@ -175,6 +183,10 @@ namespace SkillApp.PopShot.View
                 new Vector3(Sim.BoardThick * 2f * Scale, Sim.BoardH * Scale, 0.6f);
             _board.transform.localPosition =
                 new Vector3(boardX, hoopY + Sim.BoardH * Scale * 0.5f, 0.1f);
+
+            _target.transform.localScale = new Vector3(0.09f, 0.95f, 0.06f);
+            _target.transform.localPosition =
+                new Vector3(boardX - 0.05f, hoopY + 0.60f, -0.26f);
         }
 
         private void LayoutBall(Sim.State state)

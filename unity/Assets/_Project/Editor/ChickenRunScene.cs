@@ -71,19 +71,22 @@ namespace SkillApp.EditorTools
 
             // ── Chicken ──────────────────────────────────────────────────────
             var chickenGo = new GameObject("Chicken");
-            // CreatePrimitive is safe HERE because this runs in the editor,
-            // where the Physics module exists. What is not safe is leaving the
-            // collider behind: it would be serialised into the scene, and the
-            // player build has no CapsuleCollider class to deserialise it into.
-            var bodyGo = GameObject.CreatePrimitive(PrimitiveType.Capsule);
-            var bodyCollider = bodyGo.GetComponent<Collider>();
-            if (bodyCollider != null) Object.DestroyImmediate(bodyCollider);
+            // An actual chicken, not a capsule.
+            //
+            // This was one white capsule for most of the build, on the grounds
+            // that the world is stylised and a capsule reads as "a thing". It
+            // does not: it is the object the player watches every frame, and a
+            // featureless pill is the loudest possible signal that a game is
+            // unfinished. Body, head, beak, comb, wattle, tail, wings and legs
+            // is a dozen primitives and no new dependency. See Props.
+            var bodyGo = new GameObject("ChickenModel");
+            Props.BuildChicken(bodyGo.transform, boardMaterial);
             bodyGo.name = "Body";
             bodyGo.transform.SetParent(chickenGo.transform, false);
-            Object.DestroyImmediate(bodyGo.GetComponent<Collider>());
-            // The primitive ships with the built-in Default-Material, which URP
-            // cannot render — it would draw magenta.
-            bodyGo.GetComponent<MeshRenderer>().sharedMaterial = boardMaterial;
+            // No renderer or collider on the root: it is a parent for the parts,
+            // and every part was already given the board material by Props. The
+            // old capsule needed both stripped and reassigned; this needs
+            // neither, which is one fewer way to end up drawing magenta.
 
             var chickenView = chickenGo.AddComponent<ChickenView>();
 
@@ -406,22 +409,70 @@ namespace SkillApp.EditorTools
         {
             const string path = "Assets/_Project/ChickenRun/View/Board.mat";
 
-            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
-            if (existing != null) return existing;
-
-            var shader = Shader.Find("Universal Render Pipeline/Unlit");
+            // LIT, not Unlit.
+            //
+            // The board was unlit for a long time, on the argument that a stylised
+            // low-poly scene needs no lighting model and unlit is cheaper. That
+            // argument is wrong for a world made of CUBES: with no lighting every
+            // face of a cube is exactly the same colour, so a cube renders as a
+            // flat rectangle and the whole board reads as coloured paper. It is
+            // the single largest reason the game looked like placeholder art.
+            //
+            // Lit gives each face its own value from one directional light, which
+            // is all a blocky world needs to read as solid. The cost is a real
+            // lighting pass over a few hundred cubes, which a mid-range phone does
+            // without noticing.
+            var shader = Shader.Find("Universal Render Pipeline/Lit");
             if (shader == null)
             {
-                Debug.LogWarning("[scene] URP Unlit not found; falling back to Unlit/Color");
-                shader = Shader.Find("Unlit/Color");
+                Debug.LogWarning("[scene] URP Lit not found; falling back to Standard");
+                shader = Shader.Find("Standard");
+            }
+
+            var existing = AssetDatabase.LoadAssetAtPath<Material>(path);
+            if (existing != null)
+            {
+                // Migrate an existing asset rather than leaving it Unlit. The
+                // material is committed, so a checkout from before this change
+                // would otherwise keep the old flat look forever.
+                if (shader != null && existing.shader != shader)
+                {
+                    existing.shader = shader;
+                    ApplyBoardSurface(existing);
+                    EditorUtility.SetDirty(existing);
+                    AssetDatabase.SaveAssets();
+                    Debug.Log("[scene] migrated Board.mat to " + shader.name);
+                }
+                return existing;
             }
 
             var material = new Material(shader) { name = "Board" };
+            ApplyBoardSurface(material);
             Directory.CreateDirectory(Path.GetDirectoryName(path)!);
             AssetDatabase.CreateAsset(material, path);
             AssetDatabase.SaveAssets();
             Debug.Log($"[scene] created {path}");
             return material;
+        }
+
+        /// <summary>
+        /// The surface response every block in both games shares.
+        ///
+        /// Fully rough and non-metallic: a specular highlight sliding across a
+        /// cube as the camera follows would read as a moving light rather than as
+        /// a solid object, and the world is meant to look like painted wood.
+        /// </summary>
+        private static void ApplyBoardSurface(Material material)
+        {
+            if (material.HasProperty("_Smoothness")) material.SetFloat("_Smoothness", 0f);
+            if (material.HasProperty("_Glossiness")) material.SetFloat("_Glossiness", 0f);
+            if (material.HasProperty("_Metallic")) material.SetFloat("_Metallic", 0f);
+            if (material.HasProperty("_SpecularHighlights"))
+            {
+                material.SetFloat("_SpecularHighlights", 0f);
+                material.DisableKeyword("_SPECULARHIGHLIGHTS_OFF");
+                material.EnableKeyword("_SPECULARHIGHLIGHTS_OFF");
+            }
         }
 
         /// <summary>

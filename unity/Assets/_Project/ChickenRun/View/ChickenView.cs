@@ -43,6 +43,16 @@ namespace SkillApp.ChickenRun.View
         [SerializeField] private float hopSeconds = 0.14f;
         [SerializeField] private float hopHeight = 0.42f;
 
+        /// <summary>
+        /// Overall size of the chicken model.
+        ///
+        /// Was 0.62, which was correct for Unity's capsule primitive — that is
+        /// two units tall, so 0.62 gave a 1.2-unit bird. The hand-built model in
+        /// Props spans about 1.3 units at scale 1, so the same number rendered it
+        /// two-thirds the size it should be and the player was watching a dot.
+        /// </summary>
+        [SerializeField] private float bodyScale = 1.45f;
+
         [Header("Squash and stretch")]
         [SerializeField] private float launchStretch = 0.28f;
         [SerializeField] private float landSquash = 0.22f;
@@ -159,7 +169,7 @@ namespace SkillApp.ChickenRun.View
                 scaleXZ = 1f / Mathf.Sqrt(Mathf.Max(scaleY, 0.01f));
             }
 
-            body.localScale = new Vector3(scaleXZ, scaleY, scaleXZ) * 0.62f;
+            body.localScale = new Vector3(scaleXZ, scaleY, scaleXZ) * bodyScale;
         }
 
         private void ApplyFacing()
@@ -188,18 +198,18 @@ namespace SkillApp.ChickenRun.View
             {
                 // Drowning: sink and shrink.
                 body.position += Vector3.down * (d * 0.9f * Time.unscaledDeltaTime * 4f);
-                body.localScale = Vector3.one * 0.62f * (1f - d * 0.5f);
+                body.localScale = Vector3.one * bodyScale * (1f - d * 0.5f);
             }
             else if (state.Reason == Sim.EndDeath)
             {
                 // Flattened by a vehicle or a train.
-                body.localScale = new Vector3(1.5f, 0.12f, 1.5f) * 0.62f;
+                body.localScale = new Vector3(1.5f, 0.12f, 1.5f) * bodyScale;
             }
             else
             {
                 // Caught by the idle line: sink into shadow rather than splat, so
                 // it is visibly a different failure from being hit.
-                body.localScale = Vector3.one * 0.62f * (1f - d * 0.8f);
+                body.localScale = Vector3.one * bodyScale * (1f - d * 0.8f);
             }
         }
 
@@ -210,7 +220,7 @@ namespace SkillApp.ChickenRun.View
             _facingYaw = 0f;
             _facingVelocity = 0f;
             _deathTimer = -1f;
-            if (body != null) body.localScale = Vector3.one * 0.62f;
+            if (body != null) body.localScale = Vector3.one * bodyScale;
         }
     }
 }

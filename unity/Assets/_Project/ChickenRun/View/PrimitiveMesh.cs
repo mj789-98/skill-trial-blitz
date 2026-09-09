@@ -203,13 +203,20 @@ namespace SkillApp.ChickenRun.View
                     int a = y * (segments + 1) + x;
                     int b = a + segments + 1;
 
+                    // Wound so the front faces point OUTWARD. The first version
+                    // had these reversed, and the result was not an invisible
+                    // sphere — Unity drew the inside of it, lit by normals
+                    // pointing away from the light, so the chicken's body and
+                    // head rendered as dark grey lumps between correctly lit
+                    // cubes. A backwards sphere looks like a shading bug, not a
+                    // winding one, which is what made it worth a comment.
                     triangles[t++] = a;
-                    triangles[t++] = b;
                     triangles[t++] = a + 1;
+                    triangles[t++] = b;
 
                     triangles[t++] = a + 1;
-                    triangles[t++] = b;
                     triangles[t++] = b + 1;
+                    triangles[t++] = b;
                 }
             }
 

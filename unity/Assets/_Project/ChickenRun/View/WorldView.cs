@@ -86,7 +86,20 @@ namespace SkillApp.ChickenRun.View
         private readonly Dictionary<int, GameObject> _rows = new Dictionary<int, GameObject>();
         private readonly Stack<GameObject> _rowPool = new Stack<GameObject>();
         private readonly List<GameObject> _movers = new List<GameObject>();
-        private readonly Stack<GameObject> _moverPool = new Stack<GameObject>();
+
+        // One pool per PROP KIND, not one pool of cubes.
+        //
+        // A vehicle is now an assembly of a chassis, a cabin, glass, four wheels
+        // and a lamp, so it cannot be recycled as a log. Keeping the pools
+        // separate is what lets the props stay composite AND stay pooled — the
+        // alternative is rebuilding a dozen child objects every frame.
+        private readonly Stack<GameObject> _vehiclePool = new Stack<GameObject>();
+        private readonly Stack<GameObject> _logPool = new Stack<GameObject>();
+        private readonly Stack<GameObject> _trainPool = new Stack<GameObject>();
+        private readonly Stack<GameObject> _plainPool = new Stack<GameObject>();
+
+        private readonly Dictionary<GameObject, Stack<GameObject>> _moverOwner =
+            new Dictionary<GameObject, Stack<GameObject>>();
 
         private Transform _root;
         private Material _sharedMaterial;
@@ -205,7 +218,7 @@ namespace SkillApp.ChickenRun.View
             foreach (var m in _movers)
             {
                 m.SetActive(false);
-                _moverPool.Push(m);
+                if (_moverOwner.TryGetValue(m, out var pool)) pool.Push(m);
             }
             _movers.Clear();
 
@@ -228,20 +241,35 @@ namespace SkillApp.ChickenRun.View
                         float cells = lane.LengthSub / (float)Sim.Sub;
                         float x = posSub / Sim.Sub + cells * 0.5f - 0.5f;
 
-                        var go = TakeMover();
-                        go.transform.localScale = new Vector3(cells, 1f, isRoad ? 0.62f : 0.78f);
-                        go.transform.localPosition = new Vector3(x, isRoad ? 0.02f : 0.01f, row);
-                        Tint(go, isRoad ? vehicle : log);
+                        Color paint = isRoad ? VehicleColour(row, i) : log;
+                        var go = isRoad ? TakeVehicle(paint) : TakeLog();
+
+                        // Vehicles face the way they travel, so the headlamp and
+                        // windscreen are at the leading end rather than whichever
+                        // end the model happens to have.
+                        if (isRoad && lane.Dir < 0)
+                        {
+                            go.transform.localRotation = Quaternion.Euler(0f, 180f, 0f);
+                        }
+
+                        // Sit ON the row, not IN it. Rows are unit cubes centred
+                        // at y=0, so their surface is y=0.5 — and the original
+                        // code placed movers at y≈0, which buried half of every
+                        // car in the tarmac. That is most of why traffic read as
+                        // painted rectangles rather than as vehicles.
+                        float height = isRoad ? 0.80f : 0.42f;
+                        go.transform.localScale = new Vector3(cells, height, isRoad ? 0.62f : 0.80f);
+                        go.transform.localPosition = new Vector3(x, 0.5f + height * 0.5f, row);
 
                         // A body straddling the wrap point must be drawn twice or
                         // it visibly pops out of existence at the board edge.
                         if (posSub + lane.LengthSub > Sim.TrackSub)
                         {
-                            var wrap = TakeMover();
+                            var wrap = isRoad ? TakeVehicle(paint) : TakeLog();
+                            wrap.transform.localRotation = go.transform.localRotation;
                             wrap.transform.localScale = go.transform.localScale;
                             wrap.transform.localPosition =
                                 go.transform.localPosition - new Vector3(Sim.Cols, 0f, 0f);
-                            Tint(wrap, isRoad ? vehicle : log);
                         }
                     }
                 }
@@ -250,11 +278,11 @@ namespace SkillApp.ChickenRun.View
                     var sched = Sim.RailSchedule(state.Seed, row);
                     if (Sim.TrainPresent(sched, state.Tick))
                     {
-                        var go = TakeMover();
-                        go.transform.localScale = new Vector3(Sim.Cols, 1f, 0.7f);
+                        var go = TakeTrain();
+                        const float trainHeight = 1.05f;
+                        go.transform.localScale = new Vector3(Sim.Cols, trainHeight, 0.72f);
                         go.transform.localPosition =
-                            new Vector3((Sim.Cols - 1) * 0.5f, 0.03f, row);
-                        Tint(go, train);
+                            new Vector3((Sim.Cols - 1) * 0.5f, 0.5f + trainHeight * 0.5f, row);
                     }
                     else if (Sim.TrainWarning(sched, state.Tick))
                     {
@@ -262,11 +290,17 @@ namespace SkillApp.ChickenRun.View
                         // kills from, so a flashing light always means a train is
                         // genuinely coming. A cosmetic signal would teach the
                         // player a timing that is not real.
-                        var go = TakeMover();
                         float blink = Mathf.PingPong(Time.unscaledTime * 6f, 1f);
-                        go.transform.localScale = new Vector3(0.34f, 1f, 0.34f);
-                        go.transform.localPosition = new Vector3(-0.35f, 0.2f, row);
-                        Tint(go, Color.Lerp(Color.black, signalOn, blink));
+
+                        // A post, so the light is at head height rather than
+                        // lying on the sleepers.
+                        var post = TakePlain(new Color(0.30f, 0.30f, 0.33f));
+                        post.transform.localScale = new Vector3(0.12f, 1.1f, 0.12f);
+                        post.transform.localPosition = new Vector3(-0.35f, 0.55f, row);
+
+                        var lamp = TakePlain(Color.Lerp(new Color(0.25f, 0.05f, 0.05f), signalOn, blink));
+                        lamp.transform.localScale = new Vector3(0.30f, 0.30f, 0.30f);
+                        lamp.transform.localPosition = new Vector3(-0.35f, 1.18f, row);
                     }
                 }
             }
@@ -317,12 +351,89 @@ namespace SkillApp.ChickenRun.View
             Tint(_shadowQuad, Color.Lerp(idleShadowNear, idleShadowClose, urgency));
         }
 
-        private GameObject TakeMover()
+        private GameObject Take(Stack<GameObject> pool, System.Func<GameObject> build)
         {
-            var go = _moverPool.Count > 0 ? _moverPool.Pop() : BuildQuad("Mover", Color.white);
+            var go = pool.Count > 0 ? pool.Pop() : build();
             go.SetActive(true);
             go.transform.SetParent(_root, false);
+            go.transform.localRotation = Quaternion.identity;
             _movers.Add(go);
+            _moverOwner[go] = pool;
+            return go;
+        }
+
+        /// <summary>An empty parent holding a composite prop. Scaled like the old cube.</summary>
+        private GameObject BuildAssembly(string name, System.Action<Transform> build)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(_root, false);
+            build(go.transform);
+            return go;
+        }
+
+        private GameObject TakeVehicle(Color body)
+        {
+            var go = Take(_vehiclePool,
+                () => BuildAssembly("Vehicle", t => Props.BuildVehicle(t, _sharedMaterial, body)));
+            // Recolour the chassis and cabin on reuse so a pooled car is not
+            // always the colour of the first car that used that slot.
+            Recolour(go, "Body", body);
+            Recolour(go, "Cabin", Props.Lift(body, 0.12f));
+            return go;
+        }
+
+        private GameObject TakeLog() =>
+            Take(_logPool, () => BuildAssembly("Log", t => Props.BuildLog(t, _sharedMaterial, log)));
+
+        private GameObject TakeTrain() =>
+            Take(_trainPool, () => BuildAssembly("Train", t => Props.BuildTrain(t, _sharedMaterial, train)));
+
+        private GameObject TakePlain(Color color)
+        {
+            var go = Take(_plainPool, () => BuildQuad("Plain", Color.white));
+            Tint(go, color);
+            return go;
+        }
+
+        private static void Recolour(GameObject assembly, string childName, Color color)
+        {
+            var child = assembly.transform.Find(childName);
+            if (child != null) Props.Tint(child.gameObject, color);
+        }
+
+        /// <summary>
+        /// Traffic colour, derived from the lane rather than random.
+        ///
+        /// A random colour per frame would strobe; a single colour for every
+        /// vehicle makes a busy road read as one moving mass. Deriving it from
+        /// the row means a lane keeps its colour for as long as it is on screen,
+        /// which is what lets a player track one car.
+        /// </summary>
+        private Color VehicleColour(int row, int index)
+        {
+            var palette = new[]
+            {
+                new Color(0.90f, 0.35f, 0.30f),
+                new Color(0.36f, 0.55f, 0.86f),
+                new Color(0.96f, 0.78f, 0.28f),
+                new Color(0.42f, 0.74f, 0.45f),
+                new Color(0.85f, 0.85f, 0.88f),
+                new Color(0.62f, 0.40f, 0.76f),
+            };
+            int h = row * 7919 + index * 104729;
+            return palette[((h % palette.Length) + palette.Length) % palette.Length];
+        }
+
+        /// <summary>The one shared board material, for props built by other objects.</summary>
+        internal Material SharedMaterial => _sharedMaterial;
+
+        /// <summary>An empty parent under `parent`, filled by `build`.</summary>
+        internal GameObject BuildAssemblyChild(
+            Transform parent, string name, System.Action<Transform> build)
+        {
+            var go = new GameObject(name);
+            go.transform.SetParent(parent, false);
+            build(go.transform);
             return go;
         }
 
@@ -363,20 +474,79 @@ namespace SkillApp.ChickenRun.View
             foreach (var go in _spawned) Destroy(go);
             _spawned.Clear();
 
-            if (kind != Sim.RowGrass) return;
-
-            int mask = Sim.GrassObstacleMask(seed, row);
-            for (int col = 0; col < Sim.Cols; col++)
+            // Static dressing per row type. None of it is known to the
+            // simulation: trees stand where the obstacle mask says a cell is
+            // blocked, and everything else is paint.
+            if (kind == Sim.RowGrass)
             {
-                if ((mask & (1 << col)) == 0) continue;
+                int mask = Sim.GrassObstacleMask(seed, row);
+                for (int col = 0; col < Sim.Cols; col++)
+                {
+                    if ((mask & (1 << col)) == 0) continue;
 
-                var go = world.BuildQuad("Obstacle", world.ObstacleColor);
-                go.transform.SetParent(transform, false);
-                // Undo the parent row's non-uniform scale so obstacles stay square.
-                go.transform.localScale = new Vector3(0.72f / Sim.Cols, 1.1f, 0.72f);
-                go.transform.localPosition = new Vector3(
-                    (col - (Sim.Cols - 1) * 0.5f) / Sim.Cols, 0.55f, 0f);
-                _spawned.Add(go);
+                    var tree = world.BuildAssemblyChild(transform, "Tree",
+                        t => Props.BuildTree(t, world.SharedMaterial, world.ObstacleColor));
+                    // Undo the parent row's non-uniform scale so props stay square.
+                    tree.transform.localScale = new Vector3(0.80f / Sim.Cols, 1.25f, 0.80f);
+                    tree.transform.localPosition = new Vector3(
+                        (col - (Sim.Cols - 1) * 0.5f) / Sim.Cols, 0.62f, 0f);
+                    _spawned.Add(tree);
+                }
+                return;
+            }
+
+            if (kind == Sim.RowRoad)
+            {
+                // A dashed centre line. It does nothing mechanically and it is
+                // the single cheapest thing that makes a grey band read as a
+                // road rather than as a gap in the grass.
+                for (int i = 0; i < 5; i++)
+                {
+                    var dash = world.BuildQuad("Dash", new Color(0.86f, 0.84f, 0.72f));
+                    dash.transform.SetParent(transform, false);
+                    dash.transform.localScale = new Vector3(0.5f / Sim.Cols, 0.02f, 0.06f);
+                    dash.transform.localPosition =
+                        new Vector3((i - 2f) * 1.8f / Sim.Cols, 0.51f, 0f);
+                    _spawned.Add(dash);
+                }
+                return;
+            }
+
+            if (kind == Sim.RowRail)
+            {
+                // Two rails and the sleepers under them.
+                foreach (float z in new[] { -0.16f, 0.16f })
+                {
+                    var railBar = world.BuildQuad("Rail", new Color(0.62f, 0.62f, 0.66f));
+                    railBar.transform.SetParent(transform, false);
+                    railBar.transform.localScale = new Vector3(1f, 0.05f, 0.07f);
+                    railBar.transform.localPosition = new Vector3(0f, 0.53f, z);
+                    _spawned.Add(railBar);
+                }
+                for (int i = 0; i < 9; i++)
+                {
+                    var sleeper = world.BuildQuad("Sleeper", new Color(0.40f, 0.31f, 0.23f));
+                    sleeper.transform.SetParent(transform, false);
+                    sleeper.transform.localScale = new Vector3(0.24f / Sim.Cols, 0.03f, 0.52f);
+                    sleeper.transform.localPosition =
+                        new Vector3((i - 4f) * 1.0f / Sim.Cols, 0.51f, 0f);
+                    _spawned.Add(sleeper);
+                }
+                return;
+            }
+
+            if (kind == Sim.RowRiver)
+            {
+                // Banks. Water that runs edge to edge reads as a hole; a lighter
+                // lip on each side reads as a river.
+                foreach (float z in new[] { -0.46f, 0.46f })
+                {
+                    var bank = world.BuildQuad("Bank", new Color(0.52f, 0.78f, 0.92f));
+                    bank.transform.SetParent(transform, false);
+                    bank.transform.localScale = new Vector3(1f, 0.06f, 0.09f);
+                    bank.transform.localPosition = new Vector3(0f, 0.50f, z);
+                    _spawned.Add(bank);
+                }
             }
         }
 
