@@ -17,7 +17,7 @@
  */
 
 import React, { useCallback, useEffect, useMemo, useReducer, useState } from 'react';
-import { ActivityIndicator, StatusBar, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, BackHandler, StatusBar, StyleSheet, View } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from './api/client';
@@ -185,6 +185,35 @@ export default function App() {
     },
     [phase]
   );
+
+  /**
+   * The Android hardware back button.
+   *
+   * Choosing a state machine over a navigation stack (DECISIONS D-016) means
+   * nothing handles this for free — and on a device that is not a missing
+   * animation, it is the back gesture closing the app from the payout screen.
+   * Found by pressing it.
+   *
+   * The rules are the reducer's, restated for the one input the reducer cannot
+   * see: back leaves a screen, except a PAID round, which it must not leave.
+   * Returning true consumes the press; returning false lets Android do what it
+   * would have done, which from the lobby is to background the app — correct,
+   * because that is the top of this app's stack.
+   */
+  useEffect(() => {
+    const sub = BackHandler.addEventListener('hardwareBackPress', () => {
+      if (phase.name === 'booting' || phase.name === 'lobby') return false;
+
+      // A paid round has no exit. Swallow the press rather than letting it
+      // background the app mid-round: the round would survive on the server and
+      // be swept, but the player would think they had lost their entry.
+      if (phase.name === 'round' && phase.mode === 'blitz') return true;
+
+      dispatch({ type: 'BACK_TO_LOBBY' });
+      return true;
+    });
+    return () => sub.remove();
+  }, [phase]);
 
   const nameFor = useCallback(
     (gameId: GameId) => games.find((g) => g.game_id === gameId)?.display_name ?? gameId,

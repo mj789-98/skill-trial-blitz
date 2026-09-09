@@ -27,6 +27,23 @@ export function multiplier(x: number): string {
 /** Whole seconds remaining until an ISO timestamp, floored at zero. */
 export function secondsUntil(isoTimestamp: string, now: number = Date.now()): number {
   const target = Date.parse(isoTimestamp);
-  if (!Number.isFinite(target)) return 0;
+
+  if (!Number.isFinite(target)) {
+    // Fail closed: a timestamp we cannot read is an offer we should re-quote,
+    // not one we present as valid forever.
+    //
+    // But say so. This exact branch hid a real bug — the server was sending a
+    // Date, the callable encoder turned it into `{}`, and every quote silently
+    // rendered as already expired. A safe default that stays quiet is a safe
+    // default that lets a defect look like a feature.
+    if (__DEV__) {
+      console.warn(
+        `[format] secondsUntil could not parse ${JSON.stringify(isoTimestamp)} — ` +
+          'treating it as expired. The server should be sending an ISO string.'
+      );
+    }
+    return 0;
+  }
+
   return Math.max(0, Math.ceil((target - now) / 1000));
 }

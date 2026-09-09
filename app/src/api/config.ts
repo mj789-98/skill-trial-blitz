@@ -27,10 +27,25 @@
  * Hard-coding any one of those breaks the other two, and the brief asks for a
  * recording on a REAL DEVICE — the case a hard-coded `localhost` gets wrong.
  *
- * So we read it from Metro instead. In a debug build, `SourceCode.scriptURL` is
- * the bundle URL the app was actually loaded from, which is by definition the
- * development machine at an address this device can already reach. It is the
- * same answer for all three cases, and it is derived rather than configured.
+ * So we read it from Metro instead. In a debug build the bundle URL is, by
+ * definition, the development machine at an address this device can already
+ * reach. It is the same answer for all three cases, and it is derived rather
+ * than configured.
+ *
+ * ── Getting that URL under the New Architecture ──────────────────────────────
+ *
+ * `NativeModules.SourceCode.scriptURL` is the answer every tutorial gives, and
+ * on React Native 0.86 it is `undefined`. 0.86 is bridgeless-only, and the
+ * legacy NativeModules proxy no longer exposes SourceCode — so the lookup does
+ * not throw, it silently returns nothing, and the fallback below takes over.
+ *
+ * That failure was invisible until the app ran on a real phone: an Android
+ * emulator reaches the host at 10.0.2.2, which is exactly what the fallback
+ * returns, so every simulator test passed. On hardware it produced
+ * `auth/network-request-failed` and a splash screen that never left.
+ *
+ * `getDevServer()` is the bridgeless-safe equivalent and is what the RN dev menu
+ * itself uses. Both are tried, in that order.
  *
  * A release build has no Metro, so `EMULATOR_HOST_OVERRIDE` exists for the APK:
  * set it, rebuild, and the release binary talks to a named host.
@@ -63,14 +78,48 @@ export const REGION = 'us-central1';
 export function resolveHost(): string {
   if (EMULATOR_HOST_OVERRIDE) return EMULATOR_HOST_OVERRIDE;
 
-  // Debug builds: ask Metro where it served the bundle from.
-  const scriptURL: string | undefined = NativeModules?.SourceCode?.scriptURL;
-  const host = scriptURL ? hostOf(scriptURL) : null;
+  const host = devServerHost();
   if (host) return host;
 
   // Release build, no override. The Android emulator alias is the least-wrong
   // default; on a device this fails to connect, which is the intended outcome.
   return Platform.OS === 'android' ? '10.0.2.2' : 'localhost';
+}
+
+/**
+ * The host Metro served this bundle from, or null in a release build.
+ *
+ * Two sources, because neither is available everywhere: `getDevServer` is the
+ * bridgeless one and is what actually works on 0.86; `SourceCode.scriptURL` is
+ * kept as a fallback for any environment where the internal path moves. Both
+ * are wrapped, because a diagnostic that throws is worse than one that returns
+ * nothing.
+ */
+function devServerHost(): string | null {
+  try {
+    // A deep import, and lint says so. There is no top-level export for this —
+    // React Native's own dev menu reaches for the same path — so the choice is
+    // this or no way to find Metro at all under bridgeless. Kept narrow: one
+    // require, wrapped, with a fallback below if the path ever moves.
+    // eslint-disable-next-line @react-native/no-deep-imports
+    const getDevServer = require('react-native/Libraries/Core/Devtools/getDevServer');
+    const server = (getDevServer.default ?? getDevServer)();
+    if (server?.bundleLoadedFromServer && server.url) {
+      const host = hostOf(server.url);
+      if (host) return host;
+    }
+  } catch {
+    // Not a debug build, or the internal module moved. Fall through.
+  }
+
+  try {
+    const scriptURL: string | undefined = NativeModules?.SourceCode?.scriptURL;
+    if (scriptURL) return hostOf(scriptURL);
+  } catch {
+    // Same.
+  }
+
+  return null;
 }
 
 /** Pull the hostname out of a bundle URL like http://192.168.1.7:8081/index.bundle. */

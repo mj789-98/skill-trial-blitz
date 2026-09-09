@@ -15,15 +15,19 @@
     }
   ],
   "emulators": {
+    "//": "host 0.0.0.0 so a PHYSICAL DEVICE can reach these. The default bind is 127.0.0.1, which works for an Android emulator via 10.0.2.2 but silently refuses every connection from a real phone on the LAN - the app installs, opens, and fails every request. This exposes the emulator suite to the local network, which is acceptable for a development machine holding fake money and would never be done for anything real.",
     "auth": {
-      "port": 9099
+      "port": 9099,
+      "host": "0.0.0.0"
     },
     "functions": {
-      "port": 5001
+      "port": 5001,
+      "host": "0.0.0.0"
     },
     "ui": {
       "enabled": true,
-      "port": 4000
+      "port": 4000,
+      "host": "0.0.0.0"
     },
     "singleProjectMode": true
   }

@@ -93,7 +93,7 @@ export default function PayoutScreen({
               decides whether entering is rational at all. */}
           <View style={styles.goals}>
             <Goal
-              label="Get your entry back at"
+              label="Entry back at"
               value={`${quote.breakEvenScore}`}
               tone={colors.textMuted}
             />
@@ -205,7 +205,14 @@ export default function PayoutScreen({
 function Goal({ label, value, tone }: { label: string; value: string; tone: string }) {
   return (
     <View style={styles.goal}>
-      <Label>{label}</Label>
+      {/* The label sits in a fixed-height box so the three VALUES share a
+          baseline. Without it, "Most you can win" wraps to two lines while
+          "Target" stays on one, and the numbers underneath end up at different
+          heights — which on a device reads as a broken layout rather than as a
+          row of three related facts. Only visible at real phone widths. */}
+      <View style={styles.goalLabel}>
+        <Label>{label}</Label>
+      </View>
       <Txt variant="heading" color={tone}>
         {value}
       </Txt>
@@ -247,7 +254,8 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
-  goal: { gap: space.xs, flex: 1 },
+  goal: { gap: space.xs, flex: 1, paddingRight: space.sm },
+  goalLabel: { minHeight: 30, justifyContent: 'flex-start' },
   note: { marginTop: space.md },
   curveHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
   curveCard: { gap: space.sm, paddingVertical: space.md },

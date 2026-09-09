@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  Cleartext HTTP, to private addresses only.
+
+  The backend for this trial is the Firebase emulator suite running on a
+  development machine, reached over the LAN on plain HTTP. A release APK
+  defaults to usesCleartextTraffic=false, so without this the app installs,
+  opens, and then fails every request with no useful error — a "runnable build"
+  that cannot reach its own server.
+
+  Scoped deliberately rather than turned off globally:
+
+    - 10.0.2.2   the host, as seen from inside an Android emulator
+    - localhost  a device with adb reverse set up
+    - 192.168.31.112  this development machine on Wi-Fi
+    - 192.168.1.2     the same machine on Ethernet
+
+  Public hostnames are NOT included, so this cannot silently downgrade a real
+  API call to HTTP later. Production would talk HTTPS to deployed Functions and
+  this file would be deleted, not edited.
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">10.0.2.2</domain>
+        <domain includeSubdomains="false">localhost</domain>
+        <domain includeSubdomains="false">127.0.0.1</domain>
+    </domain-config>
+
+    <!--
+      A LAN address cannot be expressed as a wildcard here — Android matches
+      domains, not CIDR ranges — so the development machine's address is listed
+      explicitly. Change this line, and EMULATOR_HOST_OVERRIDE in
+      app/src/api/config.ts, to point a release build at a different machine.
+    -->
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">192.168.31.112</domain>
+        <domain includeSubdomains="false">192.168.1.2</domain>
+    </domain-config>
+</network-security-config>

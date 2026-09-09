@@ -118,7 +118,8 @@ exports.listGames = onCall(async () => {
   const { rows } = await query(
     `select g.game_id, g.display_name, g.blitz_enabled,
             c.params -> 'stake_tiers_cents'      as stake_tiers_cents,
-            c.params -> 'bootstrap_max_stake_cents' as bootstrap_max_stake_cents
+            c.params -> 'cold_start' -> 'bootstrap_max_stake_cents'
+              as bootstrap_max_stake_cents
        from games g
        left join blitz_configs c
          on c.game_id = g.game_id and c.is_active

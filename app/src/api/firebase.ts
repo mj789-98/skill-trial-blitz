@@ -15,7 +15,7 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { getApp, getApps, initializeApp, type FirebaseApp } from 'firebase/app';
-import { connectAuthEmulator, initializeAuth, type Auth } from 'firebase/auth';
+import { connectAuthEmulator, getAuth, initializeAuth, type Auth } from 'firebase/auth';
 // `getReactNativePersistence` only exists on @firebase/auth's react-native
 // entry point, and the `firebase/auth` umbrella has no react-native condition
 // in its exports map — so it resolves, and type-checks, only from here. Both
@@ -43,12 +43,25 @@ export function app(): FirebaseApp {
 export function auth(): Auth {
   if (authInstance) return authInstance;
 
-  // initializeAuth rather than getAuth: React Native has no default persistence,
-  // and without this the player is signed out every cold start — which in a cash
-  // app means their balance appears to vanish.
-  authInstance = initializeAuth(app(), {
-    persistence: getReactNativePersistence(AsyncStorage),
-  });
+  try {
+    // initializeAuth rather than getAuth: React Native has no default
+    // persistence, and without this the player is signed out every cold start —
+    // which in a cash app means their balance appears to vanish.
+    authInstance = initializeAuth(app(), {
+      persistence: getReactNativePersistence(AsyncStorage),
+    });
+  } catch (err) {
+    // The JS context reloaded but the native Firebase app survived, so Auth is
+    // already initialised and initializeAuth throws. Fast Refresh does this
+    // constantly during development, and React Native also reloads JS on some
+    // recoverable errors in production — so this is a real path, not just a
+    // development annoyance. The existing instance already has the persistence
+    // configured above; adopt it rather than starting a second one.
+    if ((err as { code?: string })?.code !== 'auth/already-initialized') throw err;
+    const existing = getAuth(app());
+    authInstance = existing;
+    return existing;
+  }
 
   connectAuthEmulator(authInstance, `http://${resolveHost()}:${PORTS.auth}`, {
     disableWarnings: true,

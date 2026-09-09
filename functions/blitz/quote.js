@@ -152,7 +152,19 @@ async function createQuote({ playerId, gameId, stakeCents }) {
       quoteId: row.quote_id,
       gameId,
       stakeCents: Number(row.stake_cents),
-      expiresAt: row.expires_at,
+      // ISO string, NOT the Date pg handed back.
+      //
+      // The Firebase callable encoder does not call Date.prototype.toJSON — it
+      // walks the object and a Date has no own enumerable properties, so it
+      // arrives at the client as `{}`. Date.parse({}) is NaN, the payout
+      // screen's countdown read that as expired, and the entry button was
+      // replaced by "Get a new offer" the instant the screen opened. Nothing
+      // threw; it just quietly looked like a 180-second quote had already
+      // lapsed. Found on a device.
+      //
+      // The wire format is stated here rather than left to an encoder's
+      // handling of a native type.
+      expiresAt: new Date(row.expires_at).toISOString(),
       ttlSeconds,
       balanceCents,
       affordable: balanceCents >= stakeCents,
