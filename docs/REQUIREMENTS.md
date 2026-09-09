@@ -56,7 +56,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 
 | # | Requirement | Status |
 |---|---|---|
-| 2.1 | Match reference screenshots for layout, dimension, orientation | TODO |
+| 2.1 | Match reference screenshots for layout, dimension, orientation | DONE — both games checked frame by frame against the reference recordings; camera framing, prop proportions, traffic pacing and the Pop Shot camera pitch all corrected against it. See D-028 |
 | 2.2 | Tap to jump forward | DONE — verified in a running build |
 | 2.3 | Swipe to jump left / right / back | DONE — untested on touch hardware |
 | 2.4 | Hold **"Cash Out"** to quit and keep points | DONE — 700ms hold with ring |
@@ -66,10 +66,10 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 2.8 | Watch out for **trains** | DONE — in sim |
 | 2.9 | Idle too long → game ends. **Decide threshold, state it, say why** | DONE — 6.9s, DECISIONS D-004 |
 | 2.10 | No time limit; ends on cash out, death, or idle | DONE |
-| 2.11 | Assets / prefabs | TODO |
+| 2.11 | Assets / prefabs | N/A by choice — every prop is generated in code from two meshes (Props.cs, PopShotView.cs). No imported art, no asset pipeline. Stated rather than hidden: see D-026 and D-028 |
 | 2.12 | Sound effects | DONE — 8 clips, synthesised in code; measured by an editor check that fails the build on silence or clipping |
 | 2.13 | Haptics | DONE — Android VibrationEffect via JNI, per-event duration and amplitude; untested on hardware |
-| 2.14 | **Playable** — smooth, responsive, fun | PARTIAL — plays with sound and haptics; still no device test, no art assets |
+| 2.14 | **Playable** — smooth, responsive, fun | DONE — played on a real device across many rounds; sound, haptics, lit shading, real props. The device passes found bugs no test could (D-026) |
 
 ## 3. Blitz — REQUIRED
 
@@ -193,24 +193,24 @@ are in DECISIONS D-018 and D-025.
 | 6.4 | README: versions used | DONE |
 | 6.5 | README: platform targeted | DONE |
 | 6.6 | README: **a test account we can log in with** | DONE — seeded, and signed in automatically on first launch |
-| 6.7 | DECISIONS: judgement calls where the brief was vague | DONE — 20 entries |
+| 6.7 | DECISIONS: judgement calls where the brief was vague | DONE — 28 entries |
 | 6.8 | DECISIONS: scope cut and why | DONE — D-018 |
 | 6.9 | DECISIONS: answers to every design prompt | DONE — D-004, D-007..D-011, D-013, D-014 |
 | 6.10 | DECISIONS: score-trust threat model | DONE — D-015 |
 | 6.11 | DECISIONS: **where you leaned on AI, and where you deliberately did not** | DONE — D-020 |
 | 6.12 | **Screen recording on a real device**, showing each feature | TODO |
-| 6.13 | Runnable build — an **APK** | DONE — release APK, arm64, both games, installs and runs from a clean install |
+| 6.13 | Runnable build — an **APK** | PARTIAL — the APK builds and runs from a clean checkout, but it is 169 MB and gitignored, so there is nothing a reviewer can download. Needs a GitHub Release asset |
 | 6.14 | Tuning harness + shipped config + the numbers behind it, committed | DONE — tools/sim, tuned-v1, docs/tuning-report.md |
 
 ## 7. Scoring weights
 
 | Weight | Dimension | Where we stand |
 |---|---|---|
-| 30% | Correctness & server authority | strong — full loop, 93 backend tests + 16 e2e checks, threat model written |
-| 25% | **Game feel** | two games, audio + haptics, both verified on device; still no art assets |
+| 30% | Correctness & server authority | strong — full loop, 122 backend tests + 21 e2e checks + 1000 C#/JS parity cases, threat model written |
+| 25% | **Game feel** | strong — two games, audio + haptics, lit shading and code-generated props, both proportioned against the reference footage and verified on a device |
 | 20% | Code quality & architecture | strong |
-| 15% | Product judgement & written reasoning | strong — 20 DECISIONS entries, with harness numbers behind the claims |
-| 10% | Polish & completeness | partial — no art assets, no recording, no release APK |
+| 15% | Product judgement & written reasoning | strong — 28 DECISIONS entries, with harness numbers behind the claims |
+| 10% | Polish & completeness | partial — art pass done and verified on device; the screen recording (6.12) and a downloadable APK (6.13) are the two things still open |
 
 ## 8. Explicitly out of scope
 
