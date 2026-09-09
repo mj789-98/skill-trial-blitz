@@ -63,6 +63,21 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
   const unityRef = useRef<React.ComponentRef<typeof UnityView>>(null);
   const [ready, setReady] = useState(false);
 
+  // The SAME fact as `ready`, held in a ref because the two are needed at
+  // different times.
+  //
+  // `onReady` is invoked in the same tick as `setReady(true)`, and the owning
+  // screen responds by immediately calling `send(START_ROUND)`. At that moment
+  // React has not re-rendered, so the imperative handle below still closes over
+  // `ready === false` — the send is refused, `started` never flips, and the app
+  // sits on "Loading the course" forever with the stake already debited. Nothing
+  // errors; the handshake just completes into a stale closure.
+  //
+  // The ref is written synchronously, before onReady is raised, so a send made
+  // from inside that callback sees the truth. The state is kept because it is
+  // what drives the re-render.
+  const readyRef = useRef(false);
+
   // Callbacks are held in refs so the message handler identity stays stable.
   // Without this, a parent re-render mid-round would tear down and re-create the
   // handler — and with it, potentially, the Unity view.
@@ -87,6 +102,9 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
 
     switch (msg.type) {
       case 'READY':
+        // Ref first, then state, then the callback. The order is the fix: the
+        // callback synchronously calls back into send().
+        readyRef.current = true;
         setReady(true);
         handlers.current.onReady?.();
         break;
@@ -111,20 +129,25 @@ const UnityHost = forwardRef<UnityHostHandle, Props>(function UnityHost(
   useImperativeHandle(
     ref,
     () => ({
-      isReady: () => ready,
+      isReady: () => readyRef.current,
       send(message: ToUnity) {
         const view = unityRef.current;
         if (!view) return false;
         // Sending before READY is dropped by Unity anyway; returning false lets
         // the caller retry on the handshake rather than losing a round silently.
-        if (!ready && message.type === 'START_ROUND') return false;
+        if (!readyRef.current && message.type === 'START_ROUND') return false;
 
         view.postMessage(UNITY_BRIDGE_OBJECT, UNITY_BRIDGE_METHOD, encodeToUnity(message));
         return true;
       },
     }),
-    [ready]
+    // Reads only refs, so the handle never needs rebuilding — which is also why
+    // it can no longer go stale.
+    []
   );
+
+  // `ready` drives re-render only; every decision reads readyRef.
+  void ready;
 
   useEffect(() => {
     // Returning from background can leave the Unity surface black: the player
