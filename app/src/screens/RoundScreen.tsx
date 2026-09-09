@@ -35,6 +35,8 @@ interface Props {
   seed: string;
   /** Present in blitz, absent in practice. Its presence is what enables the API calls. */
   roundId: string | null;
+  /** The player's sound and haptics preferences. Unity does not remember these. */
+  feedback: { sound: boolean; haptics: boolean };
   onHeartbeat: (score: number, tick: number) => void;
   onEnded: (msg: RoundEndMessage) => void;
   /** Rendered over the game while the settlement request is in flight. */
@@ -45,6 +47,7 @@ export default function RoundScreen({
   seed,
   roundId,
   gameId,
+  feedback,
   onHeartbeat,
   onEnded,
   settling,
@@ -58,6 +61,16 @@ export default function RoundScreen({
   const ended = useRef(false);
 
   const start = useCallback(() => {
+    // Preferences first. Unity holds no persisted copy, so a round that started
+    // before this arrived would play its first few hops at the wrong settings —
+    // which for a player who muted the game is the only moment that matters.
+    unity.current?.send({
+      type: 'SET_AUDIO',
+      sound: feedback.sound,
+      music: false, // there is no music track; declared so the contract is complete
+      haptics: feedback.haptics,
+    });
+
     const sent = unity.current?.send({
       type: 'START_ROUND',
       gameId,
@@ -66,7 +79,7 @@ export default function RoundScreen({
       roundId: roundId ?? '',
     });
     if (sent) setStarted(true);
-  }, [gameId, roundId, seed]);
+  }, [feedback.haptics, feedback.sound, gameId, roundId, seed]);
 
   // Unity may already be mounted and READY from a previous round, in which case
   // no READY message is coming and waiting for one would hang on a black screen

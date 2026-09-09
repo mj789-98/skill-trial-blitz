@@ -24,6 +24,12 @@ import { api } from './api/client';
 import { ApiError, toApiError } from './api/errors';
 import { signInAsTestPlayer, watchUser } from './api/auth';
 import type { Game, Profile } from './api/types';
+import {
+  DEFAULT_SETTINGS,
+  loadSettings,
+  saveSettings,
+  type FeedbackSettings,
+} from './api/settings';
 import { initialPhase, practiceSeed, reduce } from './flow/roundFlow';
 import type { GameId, RoundEndMessage } from './unity/protocol';
 
@@ -43,6 +49,21 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState<FeedbackSettings>(DEFAULT_SETTINGS);
+
+  // Read once at startup. Unity is told these at the start of every round rather
+  // than keeping its own copy — see api/settings.ts.
+  useEffect(() => {
+    loadSettings().then(setFeedback);
+  }, []);
+
+  const changeFeedback = useCallback((next: FeedbackSettings) => {
+    // Applied immediately, persisted in the background. A toggle that waits for
+    // storage before it moves feels broken, and the write cannot fail in a way
+    // the player needs to hear about.
+    setFeedback(next);
+    void saveSettings(next);
+  }, []);
 
   // ── Sign in ───────────────────────────────────────────────────────────────
 
@@ -192,6 +213,8 @@ export default function App() {
               dispatch({ type: 'PRACTICE_STARTED', gameId, seed: practiceSeed() })
             }
             onQuote={quote}
+            feedback={feedback}
+            onFeedbackChange={changeFeedback}
             onDeposit={() =>
               guarded(async () => {
                 // The key is per-tap so each deliberate deposit is its own entry,
@@ -222,6 +245,7 @@ export default function App() {
             gameId={phase.gameId}
             seed={phase.mode === 'blitz' ? phase.round.seed : phase.seed}
             roundId={phase.mode === 'blitz' ? phase.round.roundId : null}
+            feedback={feedback}
             onHeartbeat={heartbeat}
             onEnded={endRound}
             settling={phase.mode === 'blitz' && busy}
@@ -254,10 +278,12 @@ export default function App() {
     }
   }, [
     busy,
+    changeFeedback,
     endRound,
     enter,
     error,
     fatal,
+    feedback,
     games,
     guarded,
     heartbeat,

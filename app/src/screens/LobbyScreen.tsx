@@ -19,12 +19,13 @@
  */
 
 import React from 'react';
-import { RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, View } from 'react-native';
 
 import { Button, Card, ErrorNote, Label, Txt } from '../ui/components';
 import { colors, radius, space } from '../ui/theme';
 import { money } from '../api/format';
 import type { Game, Profile } from '../api/types';
+import type { FeedbackSettings } from '../api/settings';
 import type { GameId } from '../unity/protocol';
 
 interface Props {
@@ -37,6 +38,8 @@ interface Props {
   onPractice: (gameId: GameId) => void;
   onQuote: (gameId: GameId, stakeCents: number) => void;
   onDeposit: () => void;
+  feedback: FeedbackSettings;
+  onFeedbackChange: (next: FeedbackSettings) => void;
 }
 
 export default function LobbyScreen({
@@ -49,6 +52,8 @@ export default function LobbyScreen({
   onPractice,
   onQuote,
   onDeposit,
+  feedback,
+  onFeedbackChange,
 }: Props) {
   return (
     <ScrollView
@@ -71,6 +76,20 @@ export default function LobbyScreen({
       </Card>
 
       <ErrorNote message={error} />
+
+      <Card style={styles.settings}>
+        <Label>Feedback</Label>
+        <Toggle
+          label="Sound"
+          value={feedback.sound}
+          onChange={(sound) => onFeedbackChange({ ...feedback, sound })}
+        />
+        <Toggle
+          label="Vibration"
+          value={feedback.haptics}
+          onChange={(haptics) => onFeedbackChange({ ...feedback, haptics })}
+        />
+      </Card>
 
       {games.map((game) => {
         const stats = profile?.profiles.find((p) => p.game_id === game.game_id);
@@ -140,6 +159,43 @@ export default function LobbyScreen({
 }
 
 /**
+ * A labelled switch.
+ *
+ * The whole row is pressable, not just the switch. A 51x31pt control is under
+ * the 44pt minimum on one axis, and a mis-tap that silently does nothing is how
+ * a settings screen earns the reputation of being broken.
+ */
+function Toggle({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <Pressable
+      onPress={() => onChange(!value)}
+      style={styles.toggleRow}
+      accessibilityRole="switch"
+      accessibilityState={{ checked: value }}
+      accessibilityLabel={label}
+    >
+      <Txt variant="body" color={colors.text}>
+        {label}
+      </Txt>
+      <Switch
+        value={value}
+        onValueChange={onChange}
+        trackColor={{ false: colors.surfaceHigh, true: colors.accent }}
+        thumbColor={colors.text}
+      />
+    </Pressable>
+  );
+}
+
+/**
  * Whether the target engine is still calibrating for this player.
  *
  * A guess, and labelled as one: the authoritative answer is `bootstrap` on the
@@ -157,6 +213,13 @@ const styles = StyleSheet.create({
   balanceRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
   depositButton: { minHeight: 44, paddingHorizontal: space.lg },
   balanceNote: { marginTop: space.sm, lineHeight: 18 },
+  settings: { gap: space.xs, paddingVertical: space.md },
+  toggleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    minHeight: 44,
+  },
   gameCard: { gap: space.md },
   gameHeader: { gap: space.xs },
   stats: { flexDirection: 'row', gap: space.sm },
