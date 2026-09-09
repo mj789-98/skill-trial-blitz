@@ -297,8 +297,11 @@ namespace SkillApp.ChickenRun.View
                         // code placed movers at y≈0, which buried half of every
                         // car in the tarmac. That is most of why traffic read as
                         // painted rectangles rather than as vehicles.
-                        float height = isRoad ? 0.80f : 0.42f;
-                        go.transform.localScale = new Vector3(cells, height, isRoad ? 0.62f : 0.80f);
+                        // A truck is taller than a car. One number, and it is
+                        // the difference between "two lengths of the same
+                        // vehicle" and a road with traffic on it.
+                        float height = isRoad ? (cells > 1.5f ? 0.92f : 0.72f) : 0.36f;
+                        go.transform.localScale = new Vector3(cells, height, isRoad ? 0.72f : 0.78f);
                         go.transform.localPosition = new Vector3(x, 0.5f + height * 0.5f, row);
 
                         // A body straddling the wrap point must be drawn twice or
@@ -578,9 +581,19 @@ namespace SkillApp.ChickenRun.View
                     var tree = world.BuildAssemblyChild(transform, "Tree",
                         t => Props.BuildTree(t, world.SharedMaterial, world.ObstacleColor));
                     // Undo the parent row's non-uniform scale so props stay square.
-                    const float treeScale = 1.25f;
+                    //
+                    // 0.60, down from 1.25, and the height is the whole point.
+                    // The Props model is 1.205 units tall at scale 1, so 1.25
+                    // made a tree a foot and a half taller than the chicken —
+                    // and in a camera tilted this far, an object that tall is
+                    // drawn a row and a half UP the screen. Trees on the grass
+                    // beside a road covered the road, which is how a lane of
+                    // clean grey tarmac came to look like it had grass growing
+                    // in it. At 0.60 a tree is 0.72 units, roughly two thirds of
+                    // the chicken, and it stays on its own row.
+                    const float treeScale = 0.60f;
                     tree.transform.localScale =
-                        new Vector3(0.80f / Sim.Cols, treeScale, 0.80f);
+                        new Vector3(0.72f / Sim.Cols, treeScale, 0.72f);
                     // Stand the trunk ON the row. The Props model reaches 0.505
                     // below its own origin, so at the old 0.62 the entire trunk
                     // and the underside of the canopy were inside the row cube —

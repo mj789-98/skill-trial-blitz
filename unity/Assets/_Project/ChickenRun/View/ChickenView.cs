@@ -63,12 +63,17 @@ namespace SkillApp.ChickenRun.View
         /// cell it stands in, wading through the scenery.
         ///
         /// So, measured: the Props model spans 1.51 units from the underside of
-        /// its feet to the top of its comb. A bird a little taller than a cell is
-        /// wide reads right in this camera, so 0.80 gives 1.21 units.
+        /// its feet to the top of its comb.
         ///
-        /// GroundOffset below depends on this. Change one, change both.
+        /// 0.62 gives 0.94 units, which is the proportion the reference game
+        /// uses — the bird is shorter than a truck and a little taller than the
+        /// bushes, and it never obscures the row it is standing on. 0.80 made it
+        /// as tall as a cell is wide, which sounds reasonable and looked like a
+        /// chicken wading through the scenery.
+        ///
+        /// FeetBelowOrigin below depends on this. Change one, change both.
         /// </summary>
-        [SerializeField] private float bodyScale = 0.80f;
+        [SerializeField] private float bodyScale = 0.62f;
 
         /// <summary>Distance from the model's origin down to the soles of its feet.</summary>
         private const float FeetBelowOrigin = 0.54f;

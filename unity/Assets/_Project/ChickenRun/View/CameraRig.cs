@@ -42,11 +42,19 @@ namespace SkillApp.ChickenRun.View
         [SerializeField] private float pitch = 52f;
 
         /// <summary>
-        /// Half-height of the view in world units. Nine columns have to fit across
-        /// a portrait screen with a margin, so this is derived from the aspect
-        /// ratio at runtime rather than hard-coded.
+        /// How much wider than the board itself the view is, as a multiple.
+        ///
+        /// This replaces a hard-coded 11.5 world units, which was wrong in a way
+        /// that only shows up next to the reference footage: the board is YAWED,
+        /// so its nine columns occupy 9*cos(35 degrees) = 7.4 units of screen
+        /// width, not 9. Framing for 11.5 therefore left 56% margin — the whole
+        /// game was drawn at two thirds the size it should have been, and every
+        /// object in it read as small and far away.
+        ///
+        /// Derived from the yaw below rather than restated, so changing the
+        /// camera angle cannot silently un-frame the board again.
         /// </summary>
-        [SerializeField] private float visibleColumns = 11.5f;
+        [SerializeField] private float edgeMargin = 1.17f;
 
         /// <summary>
         /// How far ahead of the chicken the camera sits. Biased forward because
@@ -88,8 +96,13 @@ namespace SkillApp.ChickenRun.View
 
             // Portrait: width is the tight dimension, so size (which is half the
             // HEIGHT) has to be derived from the columns that must fit across.
+            //
+            // A yawed board is narrower on screen than it is wide in world
+            // units, and that projection is the whole reason this is not just
+            // Sim.Cols.
             float aspect = camera.aspect > 0.01f ? camera.aspect : 0.5f;
-            camera.orthographicSize = visibleColumns * 0.5f / aspect;
+            float boardWidth = Sim.Cols * Mathf.Cos(yaw * Mathf.Deg2Rad);
+            camera.orthographicSize = boardWidth * edgeMargin * 0.5f / aspect;
         }
 
         private void LateUpdate()
