@@ -7,9 +7,18 @@
 begin;
 
 -- ── Games ───────────────────────────────────────────────────────────────────
--- blitz_enabled is the per-game toggle. Chicken Run ships with Blitz on;
--- Pop Shot is registered with it OFF, which is what proves the toggle is a real
--- switch and not hard-wired to one game.
+-- blitz_enabled is the per-game toggle, and both games ship with it ON.
+--
+-- It was Pop Shot that proved the toggle is a real switch rather than something
+-- hard-wired to Chicken Run: it ran with Blitz OFF for as long as it had no
+-- config of its own, and the lobby simply offered it without a stake. It is on
+-- here because popshot-v1 below now exists. The switch is still a switch — flip
+-- this to false and the game stays playable, unstaked.
+--
+-- The on-conflict clause below deliberately does NOT overwrite blitz_enabled,
+-- so re-applying this seed cannot silently revert a toggle someone set live.
+-- The consequence is that a database seeded BEFORE popshot-v1 existed keeps
+-- Pop Shot off until it is turned on explicitly; that is the intended trade.
 
 insert into games (game_id, display_name, blitz_enabled, enabled, sort_order)
 values
