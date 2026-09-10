@@ -81,8 +81,30 @@ const TAP_COOLDOWN_TICKS = 5;
 
 // ── The hoop ────────────────────────────────────────────────────────────────
 
-/** Rim height above the floor. */
+/**
+ * The two lanes the basket alternates between, in sub-units from the left.
+ *
+ * Measured off the reference recording: across a whole round the rim occupied
+ * exactly two horizontal positions, 409 and 931 of a 1342-wide frame, which is
+ * 30.5% and 69.4% of the court -- symmetric about the centre. Nine placements,
+ * strictly alternating, never twice on the same side.
+ */
+const LANE_L = 2750;
+const LANE_R = 6250;
+
+/**
+ * The band the rim's height is drawn from, and the height a round opens on.
+ *
+ * The rim used to be a compile-time constant, which made the basket the one
+ * fixed thing in the game. In the reference it is the opposite: the basket
+ * moves after every made shot and the player re-aims each time. HOOP_Y is kept
+ * as the centre of the band so the average round still plays at the height
+ * everything else was tuned around.
+ */
 const HOOP_Y = 9500;
+const HOOP_Y_SPREAD = 1000;
+const HOOP_Y_MIN = HOOP_Y - HOOP_Y_SPREAD;
+const HOOP_Y_MAX = HOOP_Y + HOOP_Y_SPREAD;
 
 /** Half the rim opening. The ball (radius 340) has room but not much. */
 const RIM_HALF = 900;
@@ -186,17 +208,40 @@ function floorDiv(a, b) {
 // ── The world, derived from the seed ────────────────────────────────────────
 
 /**
- * Where the hoop stands for this round.
+ * Where the hoop stands for the nth placement of a round.
  *
- * Varied by seed so a round is not the same course every time. That is game
- * feel first, but it also means a trace that scored well in one round is worth
- * nothing replayed into another — the seed differs, so the same taps produce a
- * different result.
+ * n is the number of baskets already made, so n=0 is where the round opens.
+ *
+ * ── Why this is a pure function of (seed, n) ─────────────────────────────────
+ *
+ * The obvious implementation is a generator advanced on each basket, with its
+ * state living in State. That would work and it would be wrong here: the
+ * server replays a trace to decide what a round paid, so every value the
+ * simulation uses has to be reconstructible from the seed alone. A pure
+ * function of (seed, n) is reconstructible by construction, needs nothing
+ * carried in the state, and is trivially identical in C# — a generator would
+ * mean keeping two RNG cursors in step across two languages for the length of
+ * a round.
+ *
+ * ── The side alternates, the height does not ────────────────────────────────
+ *
+ * Strict alternation is what the reference does, and it is not arbitrary: it
+ * guarantees the next basket is always a real crossing of the court rather
+ * than sometimes a tap-in where the ball already is. Only which side it STARTS
+ * on comes from the seed. The height is drawn per placement, so the player
+ * re-reads the shot each time instead of learning one arc.
  */
-function hoopX(seed) {
-  const rng = mulberry32(seed ^ 0x9e3779b9);
-  // Between 45% and 75% of the court, away from both edges.
-  return 4 * SUB + (rng() % (3 * SUB));
+function hoopPlacement(seed, n) {
+  // A distinct stream per placement. Mixing n in through a multiply-and-xor
+  // rather than calling next() n times keeps this O(1) and, more importantly,
+  // keeps it a function rather than a cursor.
+  const rng = mulberry32((seed ^ 0x9e3779b9) + Math.imul(n, 0x85ebca6b));
+  const startLeft = (mulberry32(seed ^ 0x27d4eb2f)() & 1) === 0;
+  const left = startLeft === (n % 2 === 0);
+  return {
+    x: left ? LANE_L : LANE_R,
+    y: HOOP_Y_MIN + (rng() % (HOOP_Y_MAX - HOOP_Y_MIN + 1)),
+  };
 }
 
 /**
@@ -217,9 +262,14 @@ function hoopX(seed) {
  * those rounds worse to play: the ball spawned on the far side and drifted
  * AWAY from the hoop, so the first approach was a lap of the court rather than
  * a run at the basket.
+ *
+ * Now that the basket moves, "opposite the basket" is no longer a fact about
+ * the round -- it is a fact about the moment. So this takes the hoop's CURRENT
+ * position rather than the seed, and the drift is re-aimed whenever the hoop
+ * is placed. The rule in the brief holds continuously instead of holding once.
  */
-function driftDir(seed) {
-  return hoopX(seed) * 2 >= COURT_W ? 1 : -1;
+function driftDir(hx) {
+  return hx * 2 >= COURT_W ? 1 : -1;
 }
 
 // ── State ───────────────────────────────────────────────────────────────────
@@ -241,13 +291,15 @@ function driftDir(seed) {
  * @property {boolean} touchedRim     since the last floor contact
  * @property {boolean} touchedBoard   since the last floor contact
  * @property {number} lastTapTick
- * @property {number} hoopX
+ * @property {number} hoopX     current basket centre, re-placed on each basket
+ * @property {number} hoopY     current rim height, re-placed on each basket
  * @property {string|null} reason
  */
 
 function createState(seed) {
   const s = parseSeed(seed);
-  const dir = driftDir(s);
+  const start = hoopPlacement(s, 0);
+  const dir = driftDir(start.x);
   return {
     seed: s,
     tick: 0,
@@ -266,14 +318,27 @@ function createState(seed) {
     touchedRim: false,
     touchedBoard: false,
     lastTapTick: -TAP_COOLDOWN_TICKS,
-    hoopX: hoopX(s),
+    hoopX: start.x,
+    hoopY: start.y,
     reason: null,
   };
 }
 
-/** The backboard's x, on the far side of the rim from where the ball arrives. */
+/**
+ * The backboard's x: always OUTBOARD, so the rim opens into the court.
+ *
+ * This used to be unconditionally +x, which was correct only because the hoop
+ * never left the right-hand half. On the left lane a +x board would stand
+ * between the rim and the court -- the ball would hit the back of the
+ * backboard on every approach, and the basket would face the wall.
+ *
+ * The reference is unambiguous here: in every frame the mounting arm is on the
+ * outside and the rim faces the middle of the court.
+ */
 function boardX(state) {
-  return state.hoopX + RIM_HALF + BOARD_THICK;
+  return state.hoopX * 2 >= COURT_W
+    ? state.hoopX + RIM_HALF + BOARD_THICK
+    : state.hoopX - RIM_HALF - BOARD_THICK;
 }
 
 // ── One tick ────────────────────────────────────────────────────────────────
@@ -343,7 +408,7 @@ function step(state, actions) {
   // Scoring is a downward crossing of the rim plane, inside the opening.
   // Downward specifically — a ball punched up through the hoop from below is
   // not a basket in any basketball anyone plays.
-  if (!wrapped && prevY > HOOP_Y && state.y <= HOOP_Y) {
+  if (!wrapped && prevY > state.hoopY && state.y <= state.hoopY) {
     const dx = state.x - state.hoopX;
     const clearance = RIM_HALF - BALL_R;
     if (dx >= -clearance && dx <= clearance) {
@@ -387,6 +452,28 @@ function score(state) {
   // A basket also resets the buzzer window: the shot landed, so the round is
   // alive again.
   state.buzzerTicks = 0;
+
+  // ── The basket moves ──────────────────────────────────────────────────────
+  //
+  // One relocation per BASKET, not per point. A clean shot is worth more but
+  // it is still one shot, and in the reference a CLEAN moved the hoop exactly
+  // once -- eight relocations across a nine-point round.
+  //
+  // Placed from the basket count, which has already been incremented, so the
+  // nth basket puts the hoop in placement n. Nothing is stored but the result:
+  // replaying the same trace reconstructs the same placements from the seed.
+  const next = hoopPlacement(state.seed, state.baskets);
+  state.hoopX = next.x;
+  state.hoopY = next.y;
+
+  // Re-aim the drift at the new basket.
+  //
+  // Without this the ball keeps travelling away from the hoop it now has to
+  // reach, and every basket is followed by a full lap of the court -- the
+  // exact failure the fixed drift direction was introduced to remove, brought
+  // back by a hoop that moves. It also keeps the brief's wrap rule true: the
+  // ball leaves on the basket's side and returns from the far one.
+  state.vx = DRIFT_VX * driftDir(state.hoopX);
 }
 
 /**
@@ -422,7 +509,7 @@ function checkEnd(state) {
   if (state.clockTicks > 0) return null;
 
   // Clock is at zero. The ball decides.
-  const live = state.y > HOOP_Y;
+  const live = state.y > state.hoopY;
   if (!live) return END_TIME;
 
   state.buzzerTicks++;
@@ -453,7 +540,7 @@ function collideRim(state) {
 
   for (let i = 0; i < posts.length; i++) {
     const nx = state.x - posts[i];
-    const ny = state.y - HOOP_Y;
+    const ny = state.y - state.hoopY;
     const reach = BALL_R + POST_R;
     const distSq = nx * nx + ny * ny;
     if (distSq >= reach * reach) continue;
@@ -461,7 +548,7 @@ function collideRim(state) {
     const dist = isqrt(distSq);
     if (dist === 0) {
       // Dead centre on the post. Pick a direction rather than dividing by zero.
-      state.y = HOOP_Y + reach;
+      state.y = state.hoopY + reach;
       state.vy = Math.abs(state.vy);
       state.touchedRim = true;
       continue;
@@ -482,7 +569,7 @@ function collideRim(state) {
     // Push out of the overlap, or the next tick collides again and the ball
     // sticks to the rim buzzing.
     state.x = posts[i] + floorDiv(ux * reach, SUB);
-    state.y = HOOP_Y + floorDiv(uy * reach, SUB);
+    state.y = state.hoopY + floorDiv(uy * reach, SUB);
 
     state.touchedRim = true;
   }
@@ -491,7 +578,7 @@ function collideRim(state) {
 /** Bounce off the backboard. Axis-aligned, so a sign flip is the whole physics. */
 function collideBoard(state, prevX) {
   const bx = boardX(state);
-  if (state.y < HOOP_Y || state.y > HOOP_Y + BOARD_H) return;
+  if (state.y < state.hoopY || state.y > state.hoopY + BOARD_H) return;
 
   const near = state.x + BALL_R > bx - BOARD_THICK && state.x - BALL_R < bx + BOARD_THICK;
   if (!near) return;
@@ -607,6 +694,10 @@ module.exports = {
   MAX_FALL_VY,
   TAP_COOLDOWN_TICKS,
   HOOP_Y,
+  HOOP_Y_MIN,
+  HOOP_Y_MAX,
+  LANE_L,
+  LANE_R,
   RIM_HALF,
   POST_R,
   BOARD_THICK,
@@ -630,7 +721,7 @@ module.exports = {
   parseSeed,
   isqrt,
   floorDiv,
-  hoopX,
+  hoopPlacement,
   driftDir,
   boardX,
   inBuzzerWindow,

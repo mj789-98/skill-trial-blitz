@@ -607,7 +607,7 @@ namespace SkillApp.PopShot.View
             float rim = Sim.RimHalf * Scale;
             float ballR = Sim.BallR * Scale;
             float hoopX = state.HoopXPos * Scale;
-            float hoopY = Sim.HoopY * Scale;
+            float hoopY = state.HoopYPos * Scale;
 
             float bx = state.X * Scale;
             float by = state.Y * Scale;
@@ -681,7 +681,15 @@ namespace SkillApp.PopShot.View
         private void LayoutCourt(Sim.State state)
         {
             float hoopX = state.HoopXPos * Scale;
-            float hoopY = Sim.HoopY * Scale;
+            // From the state, not the constant. The rim's height is re-drawn on
+            // every basket now, and a view still reading a constant would
+            // render a basket the ball does not go through.
+            float hoopY = state.HoopYPos * Scale;
+
+            // Which way the basket faces. The backboard, pole and arm all stand
+            // OUTBOARD of the rim so it opens into the court, so all three
+            // mirror when the basket changes lanes.
+            float outward = state.HoopXPos * 2 >= Sim.CourtW ? 1f : -1f;
 
             // Meets the ball's resting height exactly, so the ball sits ON the
             // floor rather than hovering above a slab.
@@ -712,7 +720,7 @@ namespace SkillApp.PopShot.View
             // wrong besides. The hoop is on the street, behind the fence, which
             // is where the reference mounts it too.
             const float poleBase = 6.9f;
-            float poleX = boardX + 0.55f;
+            float poleX = boardX + 0.55f * outward;
             float poleTop = hoopY + Sim.BoardH * Scale * 0.75f;
             float poleHeight = poleTop - poleBase;
             // Behind the play plane. At z=0.15 the pole was drawn in front of
@@ -723,7 +731,8 @@ namespace SkillApp.PopShot.View
                 new Vector3(poleX, poleBase + poleHeight * 0.5f, 0.5f);
 
             _arm.transform.localScale = new Vector3(0.62f, 0.14f, 0.14f);
-            _arm.transform.localPosition = new Vector3(boardX + 0.28f, hoopY + 0.35f, 0.45f);
+            _arm.transform.localPosition =
+                new Vector3(boardX + 0.28f * outward, hoopY + 0.35f, 0.45f);
         }
 
         private void LayoutBall(Sim.State state)

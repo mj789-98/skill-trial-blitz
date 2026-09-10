@@ -44,14 +44,63 @@ test('the same seed and trace always produce the same result', () => {
 });
 
 test('a different seed produces a different course', () => {
-  // The seed moves the hoop and the drift direction, so a trace that scored in
-  // one round is worth nothing replayed into another. This is what makes a
-  // known-good trace non-transferable between rounds.
+  // The seed decides which side the basket opens on and how high it hangs, so
+  // a trace that scored in one round is worth nothing replayed into another.
+  // This is what makes a known-good trace non-transferable between rounds.
   const positions = new Set();
   for (const s of ['1', '2', '3', '4', '5', '6', '7', '8']) {
-    positions.add(`${sim.hoopX(sim.parseSeed(s))}:${sim.driftDir(sim.parseSeed(s))}`);
+    const p = sim.hoopPlacement(sim.parseSeed(s), 0);
+    positions.add(`${p.x}:${p.y}:${sim.driftDir(p.x)}`);
   }
   assert.ok(positions.size > 1, 'every seed produced the same course');
+});
+
+test('the basket alternates sides on every basket, and never leaves the court', () => {
+  // Straight off the reference recording: across a nine-point round the rim
+  // occupied two lanes and strictly alternated, eight times, never twice on
+  // the same side. Alternation is the property worth pinning -- it guarantees
+  // the next basket is a real crossing of the court rather than a tap-in
+  // where the ball already happens to be.
+  for (const seed of ['1', '7', '99', '12345', '65535']) {
+    const s = sim.parseSeed(seed);
+    let prev = null;
+    for (let n = 0; n < 24; n++) {
+      const p = sim.hoopPlacement(s, n);
+
+      assert.ok(
+        p.x === sim.LANE_L || p.x === sim.LANE_R,
+        `placement ${n} was off-lane at ${p.x}`
+      );
+      if (prev !== null) {
+        assert.notEqual(p.x, prev, `placement ${n} repeated a side`);
+      }
+      prev = p.x;
+
+      // The rim and its backboard both have to fit inside the court, or the
+      // ball can be trapped against a wall it cannot get around.
+      assert.ok(p.x - sim.RIM_HALF > 0, 'rim crossed the left edge');
+      assert.ok(p.x + sim.RIM_HALF < sim.COURT_W, 'rim crossed the right edge');
+
+      assert.ok(p.y >= sim.HOOP_Y_MIN && p.y <= sim.HOOP_Y_MAX, 'rim height out of band');
+      assert.ok(Number.isInteger(p.y), 'rim height must be an integer');
+    }
+  }
+});
+
+test('the drift always points at the basket, wherever it just moved to', () => {
+  // The brief: "If the ball goes out of bounds, it rolls back in from the side
+  // of the court OPPOSITE the basket." The ball only ever leaves by the edge
+  // it is drifting towards, so the drift has to point at the basket for that
+  // to hold -- and now that the basket moves, it has to keep pointing at it.
+  for (const seed of ['3', '31', '311', '3111']) {
+    const s = sim.parseSeed(seed);
+    for (let n = 0; n < 12; n++) {
+      const p = sim.hoopPlacement(s, n);
+      const dir = sim.driftDir(p.x);
+      const towards = p.x * 2 >= sim.COURT_W ? 1 : -1;
+      assert.equal(dir, towards, `placement ${n} drifted away from the basket`);
+    }
+  }
 });
 
 test('an out-of-bounds ball comes back in opposite the basket', () => {
@@ -371,11 +420,23 @@ test('a trace claiming to run past the tick limit is refused', () => {
 test('replaying a trace built for one seed against another does not transfer', () => {
   // Bind a good run to its round. The server issues the seed, so a trace that
   // scored well elsewhere is just a list of taps against a different course.
-  const good = trace([20, 45, 70, 95, 120, 145, 170, 195]);
-  const a = sim.simulate('111', good);
-  const b = sim.simulate('222', good);
-  // Not asserting b scores less — asserting they are not the same run.
-  assert.notDeepEqual(a, b);
+  //
+  // Asserted across a spread of seeds rather than on one pair. The old version
+  // compared seeds '111' and '222' and asserted the two results differed,
+  // which passed only because one of them happened to score -- the result of
+  // simulate() carries no world state, so two scoreless rounds are equal
+  // whatever their courses were. That made it a test of a coincidence. Over a
+  // spread the claim is the real one: the same taps do not mean the same round.
+  const good = trace([20, 45, 70, 95, 120, 145, 170, 195, 220, 245, 270, 295]);
+
+  const outcomes = new Set();
+  for (let seed = 1; seed <= 60; seed++) {
+    outcomes.add(JSON.stringify(sim.simulate(String(seed), good)));
+  }
+  assert.ok(
+    outcomes.size > 1,
+    'one trace produced an identical round on every seed, so traces transfer'
+  );
 });
 
 test('an empty trace is a valid, scoreless round', () => {

@@ -48,7 +48,17 @@ namespace SkillApp.PopShot.Simulation
 
         // ── The hoop ────────────────────────────────────────────────────────
 
+        /// <summary>
+        /// The two lanes the basket alternates between. See the JS twin.
+        /// </summary>
+        public const int LaneL = 2750;
+        public const int LaneR = 6250;
+
+        /// <summary>Centre of the band the rim's height is drawn from.</summary>
         public const int HoopY = 9500;
+        public const int HoopYSpread = 1000;
+        public const int HoopYMin = HoopY - HoopYSpread;
+        public const int HoopYMax = HoopY + HoopYSpread;
         public const int RimHalf = 900;
         public const int PostR = 90;
         public const int BoardThick = 90;
@@ -145,10 +155,31 @@ namespace SkillApp.PopShot.Simulation
 
         // ── The world, derived from the seed ────────────────────────────────
 
-        public static int HoopX(uint seed)
+        /// <summary>
+        /// Where the hoop stands for the nth placement of a round, n being the
+        /// number of baskets already made.
+        ///
+        /// A pure function of (seed, n) rather than a generator advanced on
+        /// each basket, so nothing has to be carried in State and nothing has
+        /// to be kept in step across the two languages for the length of a
+        /// round. See the JS twin for the full note.
+        ///
+        /// The arithmetic is written to match JS exactly. In JS the seed
+        /// expression is computed on a Number and then truncated by mulberry32's
+        /// `>>> 0`; here it is computed unchecked and cast. Both reduce mod
+        /// 2^32, so the bits agree.
+        /// </summary>
+        public static void HoopPlacement(uint seed, int n, out int x, out int y)
         {
-            var rng = new Rng(seed ^ 0x9e3779b9u);
-            return 4 * Sub + (int)(rng.Next() % (uint)(3 * Sub));
+            uint mixed = unchecked((uint)((int)(seed ^ 0x9e3779b9u) + n * unchecked((int)0x85ebca6b)));
+            var rng = new Rng(mixed);
+
+            var startRng = new Rng(seed ^ 0x27d4eb2fu);
+            bool startLeft = (startRng.Next() & 1u) == 0u;
+            bool left = startLeft == (n % 2 == 0);
+
+            x = left ? LaneL : LaneR;
+            y = HoopYMin + (int)(rng.Next() % (uint)(HoopYMax - HoopYMin + 1));
         }
 
         /// <summary>
@@ -162,9 +193,9 @@ namespace SkillApp.PopShot.Simulation
         /// See the JS twin for the full note. Kept identical: this feeds the
         /// starting position, so a disagreement here is a divergent world.
         /// </summary>
-        public static int DriftDir(uint seed)
+        public static int DriftDir(int hoopXPos)
         {
-            return HoopX(seed) * 2 >= CourtW ? 1 : -1;
+            return hoopXPos * 2 >= CourtW ? 1 : -1;
         }
 
         // ── State ───────────────────────────────────────────────────────────
@@ -191,12 +222,14 @@ namespace SkillApp.PopShot.Simulation
             public bool TouchedBoard;
             public int LastTapTick;
             public int HoopXPos;
+            public int HoopYPos;
             public string Reason;
         }
 
         public static State CreateState(uint seed)
         {
-            int dir = DriftDir(seed);
+            HoopPlacement(seed, 0, out int startX, out int startY);
+            int dir = DriftDir(startX);
             return new State
             {
                 Seed = seed,
@@ -214,14 +247,23 @@ namespace SkillApp.PopShot.Simulation
                 TouchedRim = false,
                 TouchedBoard = false,
                 LastTapTick = -TapCooldownTicks,
-                HoopXPos = HoopX(seed),
+                HoopXPos = startX,
+                HoopYPos = startY,
                 Reason = null,
             };
         }
 
         public static State CreateState(string seed) => CreateState(ParseSeed(seed));
 
-        public static int BoardX(State s) => s.HoopXPos + RimHalf + BoardThick;
+        /// <summary>
+        /// The backboard's x: always OUTBOARD, so the rim opens into the court.
+        /// Unconditionally +x was correct only while the hoop never left the
+        /// right-hand half. See the JS twin.
+        /// </summary>
+        public static int BoardX(State s) =>
+            s.HoopXPos * 2 >= CourtW
+                ? s.HoopXPos + RimHalf + BoardThick
+                : s.HoopXPos - RimHalf - BoardThick;
 
         // ── One tick ────────────────────────────────────────────────────────
 
@@ -284,7 +326,7 @@ namespace SkillApp.PopShot.Simulation
             CollideRim(s);
             CollideBoard(s, prevX);
 
-            if (!wrapped && prevY > HoopY && s.Y <= HoopY)
+            if (!wrapped && prevY > s.HoopYPos && s.Y <= s.HoopYPos)
             {
                 int dx = s.X - s.HoopXPos;
                 int clearance = RimHalf - BallR;
@@ -326,6 +368,18 @@ namespace SkillApp.PopShot.Simulation
 
             s.ClockRunning = true;
             s.BuzzerTicks = 0;
+
+            // The basket moves. One relocation per BASKET, not per point: a
+            // clean shot is worth more but it is still one shot. Placed from
+            // the already-incremented basket count. See the JS twin.
+            HoopPlacement(s.Seed, s.Baskets, out int nx, out int ny);
+            s.HoopXPos = nx;
+            s.HoopYPos = ny;
+
+            // Re-aim the drift at the new basket, or every basket is followed
+            // by a full lap of the court and the brief's wrap rule stops
+            // holding the moment the hoop changes sides.
+            s.Vx = DriftVx * DriftDir(s.HoopXPos);
         }
 
         /// <summary>
@@ -343,7 +397,7 @@ namespace SkillApp.PopShot.Simulation
 
             if (s.ClockTicks > 0) return null;
 
-            bool live = s.Y > HoopY;
+            bool live = s.Y > s.HoopYPos;
             if (!live) return EndTime;
 
             s.BuzzerTicks++;
@@ -366,7 +420,7 @@ namespace SkillApp.PopShot.Simulation
                 int post = i == 0 ? post0 : post1;
 
                 int nx = s.X - post;
-                int ny = s.Y - HoopY;
+                int ny = s.Y - s.HoopYPos;
                 int reach = BallR + PostR;
                 int distSq = nx * nx + ny * ny;
                 if (distSq >= reach * reach) continue;
@@ -374,7 +428,7 @@ namespace SkillApp.PopShot.Simulation
                 int dist = Isqrt(distSq);
                 if (dist == 0)
                 {
-                    s.Y = HoopY + reach;
+                    s.Y = s.HoopYPos + reach;
                     s.Vy = s.Vy < 0 ? -s.Vy : s.Vy;
                     s.TouchedRim = true;
                     continue;
@@ -391,7 +445,7 @@ namespace SkillApp.PopShot.Simulation
                 s.Vy = FloorDiv(s.Vy * RimRestitution, 100);
 
                 s.X = post + FloorDiv(ux * reach, Sub);
-                s.Y = HoopY + FloorDiv(uy * reach, Sub);
+                s.Y = s.HoopYPos + FloorDiv(uy * reach, Sub);
 
                 s.TouchedRim = true;
             }
@@ -400,7 +454,7 @@ namespace SkillApp.PopShot.Simulation
         private static void CollideBoard(State s, int prevX)
         {
             int bx = BoardX(s);
-            if (s.Y < HoopY || s.Y > HoopY + BoardH) return;
+            if (s.Y < s.HoopYPos || s.Y > s.HoopYPos + BoardH) return;
 
             bool near = s.X + BallR > bx - BoardThick && s.X - BallR < bx + BoardThick;
             if (!near) return;
