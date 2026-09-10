@@ -114,6 +114,28 @@ pointed at Supabase.
 The container keeps no volume on purpose: a throwaway database that resets with
 the container is what you want for tests.
 
+**Seeding the hosted Supabase instance** is a different operation, because
+nothing there is disposable:
+
+```bash
+node tools/db/applySeed.js --env .env.supabase --dry-run
+node tools/db/applySeed.js --env .env.supabase
+```
+
+It applies `sql/002_seed.sql` only — never the schema drop — and prints the
+games and config rows before and after, so the change is visible rather than
+assumed. The seed is idempotent, so running it against an up-to-date database
+is a no-op.
+
+It will not change `games.blitz_enabled`, so that re-seeding can never revert a
+toggle someone set on a live game. A database seeded before Pop Shot had a
+config of its own therefore keeps Pop Shot's Blitz toggle off until it is turned
+on deliberately:
+
+```bash
+node tools/db/applySeed.js --env .env.supabase --enable-blitz pop_shot
+```
+
 ### 2. Backend
 
 ```bash
