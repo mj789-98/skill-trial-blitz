@@ -87,6 +87,63 @@ test('the basket alternates sides on every basket, and never leaves the court', 
   }
 });
 
+test('nothing but a moving basket may change the direction of travel', () => {
+  // Reported from the device: the ball turned round when it clipped the ring.
+  //
+  // Horizontal travel here is a conveyor, not momentum. The ball crosses the
+  // court at a constant rate and wraps, and the ONLY thing allowed to reverse
+  // it is the basket moving to the other lane. A rim or a backboard that sent
+  // the ball back the way it came turned the court around for a reason the
+  // player could not predict -- and broke the brief's wrap rule while it was
+  // at it, because a reversed ball leaves by the edge OPPOSITE the basket and
+  // returns on the basket's own side.
+  //
+  // Asserted by playing real rounds and watching vx: it may only ever change
+  // on a tick where the basket count went up.
+  for (const seed of ['5', '77', '404', '90210', '31337']) {
+    const state = sim.createState(seed);
+    let prevVx = state.vx;
+    let prevBaskets = state.baskets;
+
+    let sawRim = false;
+    let sawBoard = false;
+
+    for (let tick = 0; tick < 4000 && state.reason === null; tick++) {
+      // Climb while below the rim, then let it fall.
+      //
+      // The obvious pattern -- tap on every cooldown -- proves nothing here,
+      // and this test shipped that way for one commit. A tap SETS vy rather
+      // than adding to it, so tapping relentlessly walks the ball up to the
+      // ceiling and it never comes back down to rim height: zero rim contacts,
+      // zero baskets, and a green test asserting nothing at all.
+      sim.step(state, state.y < state.hoopY ? [sim.ACT_TAP] : []);
+
+      sawRim = sawRim || state.touchedRim;
+      sawBoard = sawBoard || state.touchedBoard;
+
+      if (state.vx !== prevVx) {
+        assert.ok(
+          state.baskets > prevBaskets,
+          `seed ${seed}: vx changed ${prevVx} -> ${state.vx} on tick ${tick} ` +
+          'without a basket being scored'
+        );
+        // And when it does change, it is the drift re-aimed at the new lane.
+        assert.equal(Math.abs(state.vx), sim.DRIFT_VX, 'drift speed changed');
+        assert.equal(state.vx, sim.DRIFT_VX * sim.driftDir(state.hoopX));
+      }
+
+      prevVx = state.vx;
+      prevBaskets = state.baskets;
+    }
+
+    // The assertions above are only worth anything if the ball actually met
+    // the things that used to deflect it.
+    assert.ok(sawRim, `seed ${seed}: never touched the rim, so nothing was tested`);
+    assert.ok(sawBoard, `seed ${seed}: never touched the board, so nothing was tested`);
+    assert.ok(state.baskets > 0, `seed ${seed}: never scored, so the hoop never moved`);
+  }
+});
+
 test('the drift always points at the basket, wherever it just moved to', () => {
   // The brief: "If the ball goes out of bounds, it rolls back in from the side
   // of the court OPPOSITE the basket." The ball only ever leaves by the edge

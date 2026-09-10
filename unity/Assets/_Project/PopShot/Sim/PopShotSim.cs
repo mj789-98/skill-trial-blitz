@@ -66,7 +66,8 @@ namespace SkillApp.PopShot.Simulation
 
         public const int FloorRestitution = 55;
         public const int RimRestitution = 70;
-        public const int BoardRestitution = 60;
+        // No BoardRestitution. The backboard does not bounce the ball -- it is
+        // a sensor that disqualifies a swish. See CollideBoard.
 
         public const int FloorY = BallR;
 
@@ -286,7 +287,6 @@ namespace SkillApp.PopShot.Simulation
 
             // ── 2. Integrate ────────────────────────────────────────────────
             int prevY = s.Y;
-            int prevX = s.X;
 
             s.Vy -= Gravity;
             if (s.Vy < -MaxFallVy) s.Vy = -MaxFallVy;
@@ -324,7 +324,7 @@ namespace SkillApp.PopShot.Simulation
 
             // ── 5. The hoop ─────────────────────────────────────────────────
             CollideRim(s);
-            CollideBoard(s, prevX);
+            CollideBoard(s);
 
             if (!wrapped && prevY > s.HoopYPos && s.Y <= s.HoopYPos)
             {
@@ -410,6 +410,14 @@ namespace SkillApp.PopShot.Simulation
 
         // ── Collisions ──────────────────────────────────────────────────────
 
+        /// <summary>
+        /// A rim post deflects the ball vertically. It does NOT touch Vx.
+        ///
+        /// This was a full 2D reflection, which is correct physics and the
+        /// wrong game: horizontal travel is a conveyor, not momentum, and only
+        /// the basket changing lanes may change its direction. See the JS twin
+        /// for the full note.
+        /// </summary>
         private static void CollideRim(State s)
         {
             int post0 = s.HoopXPos - RimHalf;
@@ -425,50 +433,42 @@ namespace SkillApp.PopShot.Simulation
                 int distSq = nx * nx + ny * ny;
                 if (distSq >= reach * reach) continue;
 
-                int dist = Isqrt(distSq);
-                if (dist == 0)
+                // Lift clear along y by exactly what clears a circle of radius
+                // `reach` at this horizontal offset. No sideways shove, and no
+                // special case for dist == 0: at dead centre nx is 0 and this
+                // is simply the full reach, so the old divide-by-zero branch
+                // has nothing left to guard.
+                int clearY = Isqrt(reach * reach - nx * nx);
+
+                if (ny >= 0)
                 {
-                    s.Y = s.HoopYPos + reach;
-                    s.Vy = s.Vy < 0 ? -s.Vy : s.Vy;
-                    s.TouchedRim = true;
-                    continue;
+                    s.Y = s.HoopYPos + clearY;
+                    if (s.Vy < 0) s.Vy = FloorDiv(-s.Vy * RimRestitution, 100);
                 }
-
-                int ux = FloorDiv(nx * Sub, dist);
-                int uy = FloorDiv(ny * Sub, dist);
-
-                int dot = FloorDiv(s.Vx * ux + s.Vy * uy, Sub);
-                s.Vx = s.Vx - FloorDiv(2 * dot * ux, Sub);
-                s.Vy = s.Vy - FloorDiv(2 * dot * uy, Sub);
-
-                s.Vx = FloorDiv(s.Vx * RimRestitution, 100);
-                s.Vy = FloorDiv(s.Vy * RimRestitution, 100);
-
-                s.X = post + FloorDiv(ux * reach, Sub);
-                s.Y = s.HoopYPos + FloorDiv(uy * reach, Sub);
+                else
+                {
+                    s.Y = s.HoopYPos - clearY;
+                    if (s.Vy > 0) s.Vy = FloorDiv(-s.Vy * RimRestitution, 100);
+                }
 
                 s.TouchedRim = true;
             }
         }
 
-        private static void CollideBoard(State s, int prevX)
+        /// <summary>
+        /// Graze the backboard: a sensor, not a wall.
+        ///
+        /// It marks the ball as having touched the board, which is what
+        /// disqualifies a swish, and does nothing else. It used to reverse Vx.
+        /// See the JS twin.
+        /// </summary>
+        private static void CollideBoard(State s)
         {
             int bx = BoardX(s);
             if (s.Y < s.HoopYPos || s.Y > s.HoopYPos + BoardH) return;
 
             bool near = s.X + BallR > bx - BoardThick && s.X - BallR < bx + BoardThick;
             if (!near) return;
-
-            if (prevX <= bx)
-            {
-                s.X = bx - BoardThick - BallR;
-                if (s.Vx > 0) s.Vx = FloorDiv(-s.Vx * BoardRestitution, 100);
-            }
-            else
-            {
-                s.X = bx + BoardThick + BallR;
-                if (s.Vx < 0) s.Vx = FloorDiv(-s.Vx * BoardRestitution, 100);
-            }
 
             s.TouchedBoard = true;
         }

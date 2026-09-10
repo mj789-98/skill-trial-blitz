@@ -119,7 +119,8 @@ const BOARD_H = 2400;
 /** Floor bounce, as a percentage of incoming speed. */
 const FLOOR_RESTITUTION = 55;
 const RIM_RESTITUTION = 70;
-const BOARD_RESTITUTION = 60;
+// No BOARD_RESTITUTION. The backboard does not bounce the ball -- it is a
+// sensor that disqualifies a swish. See collideBoard.
 
 /** Where the ball rests. */
 const FLOOR_Y = BALL_R;
@@ -364,7 +365,6 @@ function step(state, actions) {
 
   // ── 2. Integrate ─────────────────────────────────────────────────────────
   const prevY = state.y;
-  const prevX = state.x;
 
   state.vy -= GRAVITY;
   if (state.vy < -MAX_FALL_VY) state.vy = -MAX_FALL_VY;
@@ -403,7 +403,7 @@ function step(state, actions) {
   // Collisions first, then scoring: a ball that clipped the rim on the way in
   // still counts, but it is no longer a swish.
   collideRim(state);
-  collideBoard(state, prevX);
+  collideBoard(state);
 
   // Scoring is a downward crossing of the rim plane, inside the opening.
   // Downward specifically — a ball punched up through the hoop from below is
@@ -545,52 +545,66 @@ function collideRim(state) {
     const distSq = nx * nx + ny * ny;
     if (distSq >= reach * reach) continue;
 
-    const dist = isqrt(distSq);
-    if (dist === 0) {
-      // Dead centre on the post. Pick a direction rather than dividing by zero.
-      state.y = state.hoopY + reach;
-      state.vy = Math.abs(state.vy);
-      state.touchedRim = true;
-      continue;
+    // ── Vertical only. The drift is not ours to change ──────────────────────
+    //
+    // This used to be a full 2D reflection, v' = v - 2(v.n)n, which is correct
+    // physics and the wrong game. Horizontal travel here is not momentum, it is
+    // a conveyor: the ball crosses the court at a constant rate and wraps, and
+    // the ONLY thing that may change its direction is the basket moving to the
+    // other lane. A rim that reversed the drift meant the ball turned round in
+    // mid-court for a reason the player had no way to predict, and it broke the
+    // brief's wrap rule too -- a ball sent back the way it came leaves by the
+    // edge OPPOSITE the basket and returns on the basket's own side.
+    //
+    // So a post deflects the ball up or down and takes the swish away. It does
+    // not touch vx, and it does not move the ball sideways: pushing x out of
+    // the overlap would be a horizontal shove by another name, and against a
+    // constant drift it would simply be re-entered next tick.
+    //
+    // The ball is lifted clear along y instead, by exactly the amount that
+    // clears a circle of radius `reach` at this horizontal offset. Same
+    // no-sticking guarantee as the old push-out, along the one axis a post is
+    // allowed to move the ball on.
+    const clearY = isqrt(reach * reach - nx * nx);
+
+    if (ny >= 0) {
+      state.y = state.hoopY + clearY;
+      // Only reverse a ball actually falling into the post. A ball already on
+      // its way up has been dealt with and must not be kicked twice.
+      if (state.vy < 0) state.vy = floorDiv(-state.vy * RIM_RESTITUTION, 100);
+    } else {
+      state.y = state.hoopY - clearY;
+      if (state.vy > 0) state.vy = floorDiv(-state.vy * RIM_RESTITUTION, 100);
     }
-
-    // Unit normal, scaled by SUB so it stays an integer.
-    const ux = floorDiv(nx * SUB, dist);
-    const uy = floorDiv(ny * SUB, dist);
-
-    // v' = v - 2 (v.n) n, with the SUB scale divided back out.
-    const dot = floorDiv(state.vx * ux + state.vy * uy, SUB);
-    state.vx = state.vx - floorDiv(2 * dot * ux, SUB);
-    state.vy = state.vy - floorDiv(2 * dot * uy, SUB);
-
-    state.vx = floorDiv(state.vx * RIM_RESTITUTION, 100);
-    state.vy = floorDiv(state.vy * RIM_RESTITUTION, 100);
-
-    // Push out of the overlap, or the next tick collides again and the ball
-    // sticks to the rim buzzing.
-    state.x = posts[i] + floorDiv(ux * reach, SUB);
-    state.y = state.hoopY + floorDiv(uy * reach, SUB);
 
     state.touchedRim = true;
   }
 }
 
-/** Bounce off the backboard. Axis-aligned, so a sign flip is the whole physics. */
-function collideBoard(state, prevX) {
+/**
+ * Graze the backboard.
+ *
+ * A sensor, not a wall. It marks the ball as having touched the board -- which
+ * is what disqualifies a swish, per the brief -- and does nothing else.
+ *
+ * It used to reverse vx, which is what a backboard does in a game where the
+ * ball has horizontal momentum. This one does not: the drift is a conveyor and
+ * only the basket moving may change its direction. A board that bounced the
+ * ball back was the same defect as the rim reflection, one step further out --
+ * and more confusing, because the board sits OUTBOARD of the rim, so it fired
+ * after the ball had already missed and sent it back across the court under
+ * its own authority.
+ *
+ * The ball passes it and carries on to the edge, where it wraps, which is what
+ * the reference does: the ball crosses the full width of the court over and
+ * over and never turns round in open play.
+ */
+function collideBoard(state) {
   const bx = boardX(state);
   if (state.y < state.hoopY || state.y > state.hoopY + BOARD_H) return;
 
   const near = state.x + BALL_R > bx - BOARD_THICK && state.x - BALL_R < bx + BOARD_THICK;
   if (!near) return;
-
-  // Which side it came from decides which side it leaves on.
-  if (prevX <= bx) {
-    state.x = bx - BOARD_THICK - BALL_R;
-    if (state.vx > 0) state.vx = floorDiv(-state.vx * BOARD_RESTITUTION, 100);
-  } else {
-    state.x = bx + BOARD_THICK + BALL_R;
-    if (state.vx < 0) state.vx = floorDiv(-state.vx * BOARD_RESTITUTION, 100);
-  }
 
   state.touchedBoard = true;
 }
