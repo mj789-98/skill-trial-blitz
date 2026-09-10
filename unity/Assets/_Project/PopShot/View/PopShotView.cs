@@ -80,8 +80,32 @@ namespace SkillApp.PopShot.View
         private GameObject _post;
         private GameObject _arm;
 
+        /// <summary>
+        /// The net, separate from the rim so it can move while the rim cannot.
+        /// </summary>
+        private Transform _net;
+
+        /// <summary>
+        /// How far the net is currently pushed out of shape, 0 to 1.
+        ///
+        /// View-only and frame-timed, deliberately. Nothing the server replays
+        /// depends on it, so it must not consume sim state or a tick count —
+        /// if it did, a dropped frame would become a scoring difference.
+        /// </summary>
+        private float _netBulge;
+
         /// <summary>World units per sub-unit. The sim's court is 9x16 sub-thousands.</summary>
         private const float Scale = 1f / Sim.Sub;
+
+        /// <summary>How deep the net hangs below the rim, in world units.</summary>
+        /// <remarks>
+        /// 0.9 of the rim's diameter, measured off the reference recording.
+        /// Class-level because the ball-through-the-net test needs the same
+        /// number the geometry was built from; two copies would drift.
+        /// </remarks>
+        private const float NetDrop = 0.9f * 2f * Sim.RimHalf * Scale;
+
+        private const float NetPinch = 0.52f;
 
         private void Awake()
         {
@@ -208,15 +232,22 @@ namespace SkillApp.PopShot.View
         ///
         /// This is the piece the camera pitch exists for. A rim is a circle in
         /// the x-z plane, and a pitched camera projects a circle to an ellipse —
-        /// so the ring is built as an actual ring, twenty short bars around a
-        /// circle of the simulation's own RIM_HALF radius, and the projection
+        /// so the ring is built as an actual ring, twenty-four short bars around
+        /// a circle of the simulation's own RIM_HALF radius, and the projection
         /// does the rest. Its widest points sit exactly where the simulation
         /// puts the two rim posts, so what you aim at is what you collide with.
         ///
-        /// The net follows from that: eight strands from the ring, converging
-        /// inward and downward into a cone. Drawn dead-on, a cone of strands is
-        /// a flat grid — which is precisely what the old net was, and why it
-        /// read as a fence panel hanging under a shelf.
+        /// The net follows from that: twelve strands from the ring, converging
+        /// inward and downward into a cone, bound by three hoops of cord. Drawn
+        /// dead-on, a cone of strands is a flat grid — which is precisely what
+        /// the old net was, and why it read as a fence panel hanging under a
+        /// shelf.
+        ///
+        /// The ball plays at z=0 and the ring is centred there, so the near arc
+        /// of the rim and the near strands are genuinely in FRONT of the ball
+        /// while the far ones are behind it. Nothing special-cases that — it is
+        /// a real ring, a real ball and a depth buffer — and it is what makes a
+        /// made basket read as going through rather than past.
         /// </summary>
         private GameObject BuildHoop()
         {
@@ -247,9 +278,33 @@ namespace SkillApp.PopShot.View
                     Quaternion.Euler(0f, -a * Mathf.Rad2Deg - 90f, 0f));
             }
 
-            const int strands = 10;
-            const float netDrop = 0.55f;
-            const float netPinch = 0.45f;
+            // ── Net depth, measured rather than eyeballed ────────────────────
+            //
+            // This was 0.55, which is 0.31 of the rim's diameter. Measured off
+            // the reference recording -- pale pixels below the rim, over the
+            // middle third of its width, on frames where the ball was not in
+            // the way -- the real ratio is 0.91 and 0.96 on two clean reads.
+            //
+            // The old number was not merely short, it was SHORTER THAN THE BALL
+            // IS WIDE: net 0.55 against a ball of 0.68. A ball cannot travel
+            // down a net shallower than itself, so it clipped a skirt and came
+            // out the far side, which is exactly the "it does not go through
+            // the net" the reference makes obvious.
+            //
+            // 0.9 of the diameter, so it scales if RIM_HALF ever changes.
+            // Wider at the mouth than the old 0.45 too: the bottom opening has
+            // to stay clear of the ball or the net reads as a bag the ball
+            // sticks in. At 0.52 the opening is 0.94 across against a 0.68 ball.
+            const int strands = 12;
+            const float netDrop = NetDrop;
+            const float netPinch = NetPinch;
+
+            // The net hangs off its own transform so it can be deformed without
+            // touching the rim. The rim is what the simulation collides with and
+            // it must never move a millimetre for a visual effect.
+            var netGo = new GameObject("Net");
+            netGo.transform.SetParent(go.transform, false);
+            _net = netGo.transform;
 
             for (int i = 0; i < strands; i++)
             {
@@ -261,21 +316,31 @@ namespace SkillApp.PopShot.View
                 var mid = (top + bottom) * 0.5f;
                 var dir = bottom - top;
 
-                Piece(go.transform, $"Strand{i}", netColor,
+                Piece(_net, $"Strand{i}", netColor,
                     mid, new Vector3(0.022f, dir.magnitude, 0.022f),
                     Quaternion.FromToRotation(Vector3.up, dir.normalized));
             }
 
-            // A hoop of the net, so the strands read as mesh rather than as
-            // eight unrelated wires.
-            for (int i = 0; i < segments; i++)
+            // Hoops of cord around the strands, so they read as mesh rather
+            // than as a dozen unrelated wires.
+            //
+            // Three of them, not one. One was enough when the net was a 0.55
+            // skirt; across a drop three times deeper a single ring leaves two
+            // long unbroken runs and the cone goes back to looking like hanging
+            // string. The spacing tightens towards the bottom because that is
+            // what a real net does -- the cord bunches where the cone pinches.
+            float[] ringAt = { 0.28f, 0.58f, 0.84f };
+            foreach (float t in ringAt)
             {
-                float a = 2f * Mathf.PI * i / segments;
-                float rr = r * (1f - (1f - netPinch) * 0.65f);
-                Piece(go.transform, $"NetRing{i}", netColor,
-                    new Vector3(Mathf.Cos(a) * rr, -netDrop * 0.65f, Mathf.Sin(a) * rr),
-                    new Vector3(2f * Mathf.PI * rr / segments * 1.35f, 0.022f, 0.022f),
-                    Quaternion.Euler(0f, -a * Mathf.Rad2Deg - 90f, 0f));
+                float rr = r * (1f - (1f - netPinch) * t);
+                for (int i = 0; i < segments; i++)
+                {
+                    float a = 2f * Mathf.PI * i / segments;
+                    Piece(_net, $"NetRing{t:0.00}_{i}", netColor,
+                        new Vector3(Mathf.Cos(a) * rr, -netDrop * t, Mathf.Sin(a) * rr),
+                        new Vector3(2f * Mathf.PI * rr / segments * 1.35f, 0.022f, 0.022f),
+                        Quaternion.Euler(0f, -a * Mathf.Rad2Deg - 90f, 0f));
+                }
             }
 
             return go;
@@ -515,6 +580,58 @@ namespace SkillApp.PopShot.View
             FrameCourt();
             LayoutCourt(state);
             LayoutBall(state);
+            AnimateNet(state);
+        }
+
+        /// <summary>
+        /// Push the net out of shape while the ball is inside it.
+        ///
+        /// A ball passing through rigid geometry does not read as a made
+        /// basket; it reads as clipping. The net has to give. That is the whole
+        /// difference between the ball going THROUGH the net and the ball going
+        /// PAST it, and no amount of extra net detail substitutes for it.
+        ///
+        /// Driven off the ball's own position rather than off the scoring
+        /// event, so it is right during the shot instead of a beat after it,
+        /// and so a ball that drops in and rattles out still moves the net.
+        ///
+        /// Strictly cosmetic. It scales a transform that holds no collider —
+        /// the rim the simulation collides with is a sibling and never moves.
+        /// The decay is frame-timed rather than tick-timed for the same reason:
+        /// nothing the server replays may depend on the frame rate.
+        /// </summary>
+        private void AnimateNet(Sim.State state)
+        {
+            if (_net == null) return;
+
+            float rim = Sim.RimHalf * Scale;
+            float ballR = Sim.BallR * Scale;
+            float hoopX = state.HoopXPos * Scale;
+            float hoopY = Sim.HoopY * Scale;
+
+            float bx = state.X * Scale;
+            float by = state.Y * Scale;
+
+            // Inside the cone: within the rim horizontally, and between the rim
+            // and the bottom of the net vertically. The ball's radius is
+            // included at both ends so the net starts giving as the ball
+            // arrives rather than once its centre is already through.
+            bool inside =
+                Mathf.Abs(bx - hoopX) < rim + ballR &&
+                by < hoopY + ballR &&
+                by > hoopY - NetDrop - ballR;
+
+            // Snap out, ease back. A net is caught quickly and settles slowly,
+            // and matching that is most of why the motion reads as cloth.
+            float target = inside ? 1f : 0f;
+            float rate = inside ? 22f : 5f;
+            _netBulge = Mathf.MoveTowards(_netBulge, target, rate * Time.deltaTime);
+
+            // Swell across, stretch down. Uniform in x and z so the bulge is
+            // round from every angle the camera can be at.
+            float swell = 1f + 0.30f * _netBulge;
+            float stretch = 1f + 0.22f * _netBulge;
+            _net.localScale = new Vector3(swell, stretch, swell);
         }
 
         /// <summary>
