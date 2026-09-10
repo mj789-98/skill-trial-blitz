@@ -41,6 +41,7 @@ the order they are best read in — the index is the better way in.
 | [D-027](#d-027--making-the-game-easier-moved-the-tuning-numbers-by-exactly-zero) | An easier game measured identically |
 | [D-028](#d-028--what-the-reference-footage-was-actually-for) | What the reference footage was for |
 | [D-029](#d-029--the-wrap-rule-i-had-been-satisfying-half-the-time) | **The wrap rule** (§3) |
+| [D-030](#d-030--a-game-that-could-not-end-and-a-harness-that-could-not-see-it) | **A game that could not end** (§4) |
 
 ---
 
@@ -992,6 +993,12 @@ it changed shape. It is also the cheapest possible demonstration of why the tuni
 live in data — a rebuild was never needed, only a re-measure. That is the per-game config from D-013 earning its keep — one
 engine, tuned differently, because the two games produce differently shaped data.
 
+> **Superseded by [D-030](#d-030--a-game-that-could-not-end-and-a-harness-that-could-not-see-it).**
+> The 89.7% below was measured by synthetic players that could not play the game, against a
+> version of Pop Shot whose round had no ending. Pop Shot now ships `popshot-v2` at 87.1%.
+> The reasoning about *why* Pop Shot should sit above Chicken Run still stands and is why
+> 87.1% is still the higher of the two; the number itself does not.
+
 **Pop Shot ships at 89.7% RTP** (band 85.0–92.4%) rather than Chicken Run's 86.4%, on
 purpose: it has no
 cash-out, so there is no moment where a player chooses to risk everything and no round
@@ -1204,3 +1211,95 @@ re-reading the sentence. The defect was not in the code or in the reasoning; it 
 believing a paragraph I wrote was the same thing as the requirement I was given. Everything
 else in this file should be read with that in mind.
 
+---
+
+## D-030 — A game that could not end, and a harness that could not see it
+
+**The reported bug was cosmetic. What it uncovered was not.**
+
+Manas watched the reference recording and said the basket moves after every score — new
+side, new position — and ours did not. That was true: `hoopX` was drawn once per round from
+the seed and `HOOP_Y` was a compile-time constant. Measured off the footage, the rim occupies
+exactly two lanes, 30.5% and 69.4% of the court, strictly alternating, nine placements with
+no side repeated, and its height changes at every one. Eight relocations against a final score
+of nine including one CLEAN worth two, so it moves once per *basket*, not per point.
+
+Implementing that was ordinary. What it did to the tuning was not.
+
+**The harness had been measuring a game nobody was playing.**
+
+The synthetic players aimed at `sim.HOOP_Y`. That was where the basket was until the basket
+started moving; afterwards it was the centre of a band 2000 wide. Two further defects hid
+underneath: round jitter was clamped with `Math.max(0, ...)`, which turned symmetric noise
+into a bonus proportional to how bad the archetype was meant to be, and the policy never
+aimed at anything at all — it was `tap while below a fixed height`.
+
+The symptom was the population inverting: **novice 8.8 mean baskets against expert 3.8.**
+
+The mechanism is the part worth keeping. Scoring buys clock, so reach is right-skewed and
+unbounded, and one lucky round dominates a mean. Under an open-loop policy `jitter` was not
+sloppiness, it was **search** — the wider the spread, the more often some round drew an offset
+that happened to line up. Variance was being rewarded, and the archetype with the most
+variance is the one called novice.
+
+**Then the fixed bot found the actual hole.**
+
+With players that could play, the game turned out to have no ending. A basket paid +3s and a
+cycle costs as little as a second when the ball is worked from height, so scoring bought more
+clock than it spent: the shot clock climbed instead of falling and the round ran to the
+hour-long hard stop. A score with no ceiling is a payout with no ceiling.
+
+That hole was not new and the moving basket did not open it. The clock constants and the tap
+physics were untouched, and a *stationary* hoop is easier to hit than a moving one, so it was
+always reachable. The old bot was simply too weak to find it — which means the shipped
+**89.7% was measured by a player model that could not play the game.** The number was not
+slightly wrong. It was unfounded.
+
+**The bar is the best strategy, not the average one.**
+
+There are two ways to play. Hovering near the rim is what a person does. Playing from height
+is better, and not for a subtle reason: a long fall buys enough sideways travel to reach a
+hoop on the far side *without ever dropping below it*. Swept against both:
+
+| per basket | hover (realistic) | play-high (best) |
+|---|---|---|
+| +3.0s | 2.2 / 4.0 / 6.3 / 7.3 | 0.8 / 19.8 / 93.5 / 42.4 |
+| +1.5s | 2.0 / 3.6 / 4.8 / 5.0 | 0.5 / 13.3 / 66.6 / 13.9 |
+| +1.0s | 2.0 / 3.3 / 4.0 / 4.3 | 0.6 / 8.9 / 27.9 / 10.7 |
+
+**+1s per basket, +0.5s for a swish.** The round now ends under either strategy. Playing well
+still pays — it is meant to — it simply no longer pays forever.
+
+**The reference was doing nothing different in kind**, which is worth saying because it would
+be easy to read this as copying them. Their round shows nine baskets across about forty-four
+seconds — one every 4.4s — against roughly the same +3s, so their reward is comfortably less
+than their cycle costs and their clock still drains. Our game just lets a good player score
+much faster than theirs does. The honest lever was what a basket pays.
+
+**Retuned: `popshot-v2`, 87.1% RTP**, no cohort net-positive, which is the rule `tuned-v1` was
+chosen under. `popshot-v1` is retired rather than edited, and its note records that its 89.7%
+was measured against a game that no longer exists.
+
+Two smaller things fell out of it, both worth stating because both were invisible until
+something else moved:
+
+`floor_percentile` is now nearly inert — swept across 0.68 / 0.75 / 0.82 / 0.90 the weighted
+RTP moves 95.0% to 94.1% — because with scores this small `min_target` does the work the
+percentile used to. It is left at 0.68 rather than tuned to a number it no longer controls.
+
+The cold start could not go as low as the sweep wanted. Scores are integers and the curve is
+expressed in *fractions* of the target, so resolution disappears as the target shrinks: at a
+target of 4, break-even at 0.9 rounds to 4 and "break even" and "hit the target" stop being
+different scores. The integration test asserting break-even sits below the target caught it.
+6 is the smallest cold start that keeps them apart.
+
+**What I take from it.** D-027 recorded that the Chicken Run harness cannot see difficulty
+changes by construction. This is the same failure with the opposite cause and it is worse:
+that harness was blind because of what it *modelled*, this one was blind because its model
+had rotted against a game that moved underneath it. A player model is not a fixture. It is
+a claim about how the game is played, it goes stale exactly when the game changes, and it
+fails silently — a broken bot still produces a confident number in a table.
+
+The tell was available and I nearly missed it. **When the population ordering stops making
+sense, do not tune the config — check the players.** An RTP is a statement about the people
+in the simulation, and if they are not the people you meant, the number is about nobody.

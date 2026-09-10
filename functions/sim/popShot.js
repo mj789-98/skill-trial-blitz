@@ -134,8 +134,38 @@ const FLOOR_Y = BALL_R;
  * moment they most need to experiment.
  */
 const START_CLOCK_TICKS = 15 * TICK_HZ;
-const BASKET_TIME_TICKS = 3 * TICK_HZ;
-const SWISH_BONUS_TICKS = 1 * TICK_HZ;
+/**
+ * What a basket buys back on the clock.
+ *
+ * This was +3s per basket with +1s more for a swish, and at those numbers the
+ * game had no end. A basket cycle costs as little as a second when the ball is
+ * played from height, so scoring PAID more clock than it spent: the shot clock
+ * climbed instead of falling and the round ran until the hour-long hard stop.
+ * A score with no ceiling is a payout with no ceiling, which is the one thing a
+ * staked mode cannot have.
+ *
+ * The reference is not doing anything different in kind. Its round shows nine
+ * baskets across about forty-four seconds -- one every 4.4s -- against roughly
+ * the same +3s, so there the reward is comfortably less than the cycle costs
+ * and the clock still drains. Our game simply lets a good player score far
+ * faster than theirs does, and the honest lever is what a basket pays rather
+ * than how quickly one can be taken.
+ *
+ * Measured, not guessed. The bar is that the round has to end under the BEST
+ * strategy available, not the average one -- playing from height beats hovering
+ * at the rim, because a long fall buys enough sideways travel to reach a hoop
+ * on the far side without ever dropping below it. Swept against both:
+ *
+ *     per basket   hover (realistic)      play-high (best)
+ *     +3.0s        2.2 / 4.0 / 6.3 / 7.3  0.8 / 19.8 / 93.5 / 42.4
+ *     +1.5s        2.0 / 3.6 / 4.8 / 5.0  0.5 / 13.3 / 66.6 / 13.9
+ *     +1.0s        2.0 / 3.3 / 4.0 / 4.3  0.6 /  8.9 / 27.9 / 10.7
+ *
+ * +1s. The round now ends under either strategy, and playing well still pays
+ * -- it is meant to -- it simply no longer pays forever.
+ */
+const BASKET_TIME_TICKS = 1 * TICK_HZ;
+const SWISH_BONUS_TICKS = TICK_HZ / 2;
 const MAX_CLOCK_TICKS = 30 * TICK_HZ;
 
 /**

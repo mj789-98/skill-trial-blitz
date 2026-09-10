@@ -76,6 +76,28 @@ const POPULATION = [
 /** Sub-units of aim error per unit of jitter. See POPULATION. */
 const AIM_ERROR_SUB = 200;
 
+/**
+ * How high above the rim the bot is willing to loiter while it waits for the
+ * hoop to line up.
+ *
+ * Without a ceiling on the wait, "tap to stay up" means "climb": a tap SETS
+ * vertical speed rather than adding to it, so a bot that taps whenever it is
+ * not aligned rises until it hits the top of the court and stays there. It
+ * did -- mean height 14,400 against a rim at 9,500 and a ceiling at 15,660 --
+ * and from up there it barely gets a shot at all, because every attempt costs
+ * a full fall from the roof.
+ *
+ * That is also what made a sloppier archetype out-score a better one: pinned
+ * to the ceiling, the only thing that produced shot opportunities was
+ * ACCIDENTALLY failing to tap, and the archetype that fails more often is the
+ * worse one.
+ *
+ * A real player hovers around the rim. 2000 is about half a tap's worth of
+ * lift, so the bot tops up as it falls past the band instead of climbing out
+ * of the game.
+ */
+const HOLD_BAND_SUB = 2000;
+
 /** Hard stop, so a very good synthetic player cannot run the harness forever. */
 const MAX_ROUND_TICKS = 60 * sim.TICK_HZ * 3;
 
@@ -153,12 +175,18 @@ function playRound(archetype, quote, random) {
         // the shot; tapping declines it and waits for the drift to bring the
         // hoop back around.
         const cx = crossingX(state);
-        if (cx === null) {
-          wantTap = true;
+        const err = dayBias + (random() * 2 - 1) * archetype.jitter * AIM_ERROR_SUB;
+        const aligned =
+          cx !== null && Math.abs(wrapDelta(cx + err - state.hoopX)) <= sim.RIM_HALF;
+
+        if (aligned) {
+          // The shot is on. Do nothing and let it happen.
+          wantTap = false;
         } else {
-          const err = dayBias + (random() * 2 - 1) * archetype.jitter * AIM_ERROR_SUB;
-          const missBy = Math.abs(wrapDelta(cx + err - state.hoopX));
-          wantTap = missBy > sim.RIM_HALF;
+          // Hold station near the rim rather than climbing away from it: top
+          // up only while falling, and only inside the band. See
+          // HOLD_BAND_SUB.
+          wantTap = state.vy < 0 && state.y < state.hoopY + HOLD_BAND_SUB;
         }
       }
 

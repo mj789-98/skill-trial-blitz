@@ -74,8 +74,13 @@ namespace SkillApp.PopShot.Simulation
         // ── Clock ───────────────────────────────────────────────────────────
 
         public const int StartClockTicks = 15 * TickHz;
-        public const int BasketTimeTicks = 3 * TickHz;
-        public const int SwishBonusTicks = 1 * TickHz;
+        /// <summary>
+        /// What a basket buys back on the clock. See the JS twin: at the old
+        /// +3s/+1s scoring paid more clock than a cycle cost, so the round had
+        /// no end, and a score with no ceiling is a payout with no ceiling.
+        /// </summary>
+        public const int BasketTimeTicks = 1 * TickHz;
+        public const int SwishBonusTicks = TickHz / 2;
         public const int MaxClockTicks = 30 * TickHz;
         public const int NoBasketLimitTicks = 60 * TickHz;
         public const int BuzzerGraceTicks = 3 * TickHz;

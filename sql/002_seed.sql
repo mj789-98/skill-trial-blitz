@@ -214,6 +214,117 @@ where not exists (
 -- that pays exactly zero for a mistake at the end. In a game you cannot bank,
 -- a thinner return reads as the game simply taking from you.
 
+
+-- ── Pop Shot, retuned after the clock stopped paying for itself ─────────────
+--
+-- popshot-v1 measured 89.7% against a game that no longer exists, and it was
+-- never a safe number even then: the harness's synthetic players could not
+-- play. Once they could, two things showed up at once.
+--
+--   1. The round had no end. A basket paid +3s and a cycle costs as little as
+--      a second when the ball is worked from height, so scoring bought more
+--      clock than it spent and the shot clock climbed instead of falling.
+--      BASKET_TIME_TICKS is now +1s (+0.5s for a swish) and the round ends
+--      under the best strategy available, not merely the average one.
+--
+--   2. Scores collapsed with it -- mean reach is 1.9 / 3.0 / 4.2 / 4.4 across
+--      the population rather than 8 to 16 -- which left popshot-v1 measuring
+--      95.0% RTP and its cold-start seed target of 8 sitting above what any
+--      archetype now averages. A target nobody reaches is a wall, not a target.
+--
+-- So: break-even stays at 0.9 of target, the low end of the curve is thinner,
+-- and the cold start drops from 8 to 6.
+--
+-- 6 rather than the 4 the sweep first landed on, and the reason is a real
+-- constraint rather than taste. Scores are integers, so a curve expressed in
+-- FRACTIONS of the target loses resolution as the target shrinks: at a target
+-- of 4, break-even at 0.9 rounds to 4 and "break even" and "hit the target"
+-- stop being different scores. The integration test that asserts break-even
+-- sits below the target caught exactly that. 6 is the smallest cold start that
+-- keeps the two apart.
+--
+-- 87.1% RTP weighted across the population. Per cohort no one is net-positive,
+-- which is the rule tuned-v1 was chosen under too. Beginners still do best of
+-- the four, and that is inherent to a target that adapts per player: a low
+-- target is easier to clear relative to its own variance. The spread is about
+-- 11 points rather than the 31 that made a separate Pop Shot config necessary
+-- in the first place, and nobody profits.
+--
+-- floor_percentile is left at 0.68 and is now nearly inert: swept across
+-- 0.68 / 0.75 / 0.82 / 0.90 the weighted RTP moves 95.0 -> 94.1, because with
+-- scores this small min_target does the work the percentile used to.
+
+update blitz_configs set is_active = false
+ where game_id = 'pop_shot' and name <> 'popshot-v2';
+
+insert into blitz_configs (game_id, name, params, is_active, notes)
+select 'pop_shot', 'popshot-v2', $json${
+  "cold_start": {
+    "seed_target": 6,
+    "bootstrap_rounds": 3,
+    "bootstrap_cap_multiplier": 1.5,
+    "bootstrap_max_stake_cents": 100
+  },
+  "ratchet": {
+    "percentile": 0.7,
+    "up_alpha": 0.45,
+    "down_alpha": 0.08,
+    "max_up_step": 4,
+    "max_down_step": 2
+  },
+  "curve": {
+    "shape": [
+      {
+        "rel": 0.0,
+        "mult": 0.0
+      },
+      {
+        "rel": 0.35,
+        "mult": 0.12
+      },
+      {
+        "rel": 0.6,
+        "mult": 0.35
+      },
+      {
+        "rel": 0.9,
+        "mult": 1.0
+      },
+      {
+        "rel": 1.35,
+        "mult": 2.0
+      },
+      {
+        "rel": 1.75,
+        "mult": 3.0
+      }
+    ],
+    "cap_multiplier": 3.0,
+    "interpolation": "linear"
+  },
+  "ceiling_guard": {
+    "pb_window": 20,
+    "max_target_vs_pb": 0.92,
+    "min_target_vs_pb": 0.45,
+    "floor_percentile": 0.68,
+    "idle_decay_per_day": 0.04
+  },
+  "min_target": 3,
+  "quote_ttl_seconds": 180,
+  "round_deadline_seconds": 900,
+  "stake_tiers_cents": [
+    100,
+    300,
+    500,
+    1000,
+    2000
+  ]
+}$json$::jsonb, true,
+       'Retuned after the clock rebalance at 88.8% RTP. See DECISIONS D-030.'
+where not exists (
+  select 1 from blitz_configs where game_id = 'pop_shot' and name = 'popshot-v2'
+);
+
 insert into blitz_configs (game_id, name, params, is_active, notes)
 select 'pop_shot', 'popshot-v1', $json${
   "cold_start": {
@@ -276,8 +387,8 @@ select 'pop_shot', 'popshot-v1', $json${
     1000,
     2000
   ]
-}$json$::jsonb, true,
-       'Selected by tools/sim/run.js --game pop_shot at 90.1% RTP.'
+}$json$::jsonb, false,
+       'Superseded by popshot-v2. Kept as the record of what was measured before the clock rebalance; its 89.7% was measured by a player model that could not play the game.'
 where not exists (
   select 1 from blitz_configs where game_id = 'pop_shot' and name = 'popshot-v1'
 );

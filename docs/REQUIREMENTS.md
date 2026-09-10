@@ -155,7 +155,7 @@ are in DECISIONS D-018 and D-025.
 | 4.2 | Portrait or landscape — your call, say why | DONE — portrait, DECISIONS D-022 |
 | 4.3 | Clock does not start until the first basket | DONE — clockRunning stays false until the first basket; tested |
 | 4.4 | Tap anywhere to lift the ball and shoot | DONE — tap anywhere, committed on press |
-| 4.5 | Each basket adds time to the shot clock | DONE — +3s per basket, +1s extra for a swish, capped at 30s |
+| 4.5 | Each basket adds time to the shot clock | DONE — +1s per basket, +0.5s extra for a swish, capped at 30s. Was +3s/+1s, which paid more clock than a basket cost to score, so a competent player never ran out and the round had no ending. See D-030 |
 | 4.6 | Swish (no rim, no backboard) = extra points | DONE — swish is 3 points vs 2, tracked per flight since the last floor contact |
 | 4.7 | Out of bounds → rolls back in from the opposite side | DONE — toroidal wrap; the renderer draws the ball twice so it reads as continuous |
 | 4.8 | Buzzer-beater: slow-mo, animation, extra seconds | DONE — buzzer window, slow-motion, tested both halves |
