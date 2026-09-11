@@ -198,7 +198,7 @@ are in DECISIONS D-018 and D-025.
 | 6.9 | DECISIONS: answers to every design prompt | DONE — D-004, D-007..D-011, D-013, D-014 |
 | 6.10 | DECISIONS: score-trust threat model | DONE — D-015 |
 | 6.11 | DECISIONS: **where you leaned on AI, and where you deliberately did not** | DONE — D-020 |
-| 6.12 | **Screen recording on a real device**, showing each feature | TODO |
+| 6.12 | **Screen recording on a real device**, showing each feature | PARTIAL — [one minute on a real phone](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.3/screen-recording-v1.0.3.mp4) against the live backend: Blitz rounds in both games, a loss, a break-even, Pop Shot's moving basket. Not yet shown: a Chicken Run cash-out win, the insufficient-balance screen, the error screen |
 | 6.13 | Runnable build — an **APK** | DONE — [latest GitHub Release](https://github.com/mj789-98/skill-trial-blitz/releases/latest). The APK talks to the deployed backend and is verified on a real phone with no cable and no emulators: signs in and loads the lobby from the live server in about three seconds |
 | 6.14 | Tuning harness + shipped config + the numbers behind it, committed | DONE — tools/sim, tuned-v1, docs/tuning-report.md |
 
@@ -210,7 +210,7 @@ are in DECISIONS D-018 and D-025.
 | 25% | **Game feel** | strong — two games, audio + haptics, lit shading and code-generated props, both proportioned against the reference footage and verified on a device |
 | 20% | Code quality & architecture | strong |
 | 15% | Product judgement & written reasoning | strong — 31 DECISIONS entries, with harness numbers behind the claims |
-| 10% | Polish & completeness | partial — art pass done and verified on device; the screen recording (6.12) is the one thing still open; the APK is downloadable (6.13) |
+| 10% | Polish & completeness | partial — art pass done and verified on device; the screen recording (6.12) covers the core loop but not yet every feature; the APK is downloadable (6.13) |
 
 ## 8. Explicitly out of scope
 
