@@ -163,6 +163,8 @@ the other two — see `app/src/api/config.ts`.
 
 ### 3b. The prebuilt release APK
 
+**Download it: [v1.0.0 on GitHub Releases](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.0)** — or the file directly: [skill-trial-blitz-v1.0.0.apk](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.0/skill-trial-blitz-v1.0.0.apk). Android 7.0+ on a 64-bit phone, and an internet connection. Nothing else.
+
 `app/android/app/build/outputs/apk/release/app-release.apk`, arm64-v8a, signed
 with the standard Android debug key so it installs without you generating one.
 
