@@ -10,3 +10,34 @@ index a10543a..e0f1645 100644
  }
  
  
+diff --git a/node_modules/@azesmway/react-native-unity/android/src/main/java/com/azesmwayreactnativeunity/ReactNativeUnityView.java b/node_modules/@azesmway/react-native-unity/android/src/main/java/com/azesmwayreactnativeunity/ReactNativeUnityView.java
+index bc4e473..5e69b53 100644
+--- a/node_modules/@azesmway/react-native-unity/android/src/main/java/com/azesmwayreactnativeunity/ReactNativeUnityView.java
++++ b/node_modules/@azesmway/react-native-unity/android/src/main/java/com/azesmwayreactnativeunity/ReactNativeUnityView.java
+@@ -43,12 +43,20 @@ public class ReactNativeUnityView extends FrameLayout {
+       return;
+     }
+ 
+-    // pause Unity on blur, resume on focus
+-    if (hasWindowFocus && _isUnityPaused) {
+-      // view.requestFocus();
+-      view.resume();
+-    } else if (!hasWindowFocus && !_isUnityPaused) {
+-      view.pause();
++    // Focus is not visibility. This used to pause Unity whenever the window lost focus
++    // and resume it only if `_isUnityPaused` was set -- but it paused through
++    // view.pause(), which never sets that flag, so nothing ever resumed it. Anything
++    // that takes focus without leaving the app froze the player for good: the screen
++    // recorder's "Start recording?" dialog and its floating toolbar, the notification
++    // shade, a chat bubble. A frozen player draws black, so the next round opened on a
++    // black screen, and only restarting the app brought it back.
++    //
++    // Losing focus now leaves Unity running. Actually leaving the app is handled by
++    // onHostPause/onHostResume in the view manager, which pause and resume through
++    // ReactNativeUnity.pause()/resume() and keep the flag honest. Regaining focus
++    // resumes through the same call, so a player paused by any other route comes back.
++    if (hasWindowFocus) {
++      ReactNativeUnity.resume();
+     }
+   }
+ 

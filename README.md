@@ -15,6 +15,18 @@ tells it.
 fine and nothing is penalised for choosing it. This was built on Windows with no
 macOS host, so iOS was never actually available. See `DECISIONS.md` → D-001.
 
+## Try it — no setup
+
+1. On an Android phone (**Android 7.0+, 64-bit**), download the APK from the
+   **[latest release](https://github.com/mj789-98/skill-trial-blitz/releases/latest)** and install it.
+2. Open it. It signs in by itself and talks to the **live backend**: Firebase Auth
+   and Cloud Functions in `asia-south1`, the database on Supabase. Nothing runs on
+   your computer — no Docker, no emulators, no cable.
+3. Tap **+ $10** for mock money, pick a stake, play.
+
+New players are capped at a $1 entry and a 1.5× payout for their first rounds —
+that is the cold-start protection (D-011), not a bug.
+
 ---
 
 ## Versions
@@ -79,10 +91,10 @@ docs/         Requirements inventory, tuning report.
 
 ---
 
-## Running it from a clean checkout
+## For developers: running it locally (optional)
 
 **To play, you need none of this.** Install the APK from the
-[v1.0.2 release](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.2):
+[latest release](https://github.com/mj789-98/skill-trial-blitz/releases/latest):
 it talks to the deployed backend (DECISIONS D-031). What follows is for running and
 changing the project locally.
 
@@ -168,7 +180,7 @@ the other two — see `app/src/api/config.ts`.
 
 ### 3b. The prebuilt release APK
 
-**Download it: [v1.0.2 on GitHub Releases](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.2)** — or the file directly: [skill-trial-blitz-v1.0.2.apk](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.2/skill-trial-blitz-v1.0.2.apk). Android 7.0+ on a 64-bit phone, and an internet connection. Nothing else.
+**Download it: the [latest release](https://github.com/mj789-98/skill-trial-blitz/releases/latest).** Android 7.0+ on a 64-bit phone, and an internet connection. Nothing else.
 
 `app/android/app/build/outputs/apk/release/app-release.apk`, arm64-v8a, signed
 with the standard Android debug key so it installs without you generating one.
@@ -323,5 +335,8 @@ Honest status per requirement is in [`docs/REQUIREMENTS.md`](docs/REQUIREMENTS.m
 which is the source of truth. Judgement calls, the threat model, scope cuts, and
 where AI was and was not used are in [`DECISIONS.md`](DECISIONS.md).
 
-**Pop Shot (Section 3) is not built.** It is explicitly bonus, and explicitly
-gated on Sections 1 and 2 being finished *and polished*.
+**Pop Shot (Section 3), the bonus game, is built** — at the reviewer's direction;
+why, and what it taught the payout engine, is in D-018 and D-025.
+
+**The backend is deployed** (D-031), and the downloadable APK talks to it. The
+local setup above is for changing the project, not for playing it.

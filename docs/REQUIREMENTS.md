@@ -199,7 +199,7 @@ are in DECISIONS D-018 and D-025.
 | 6.10 | DECISIONS: score-trust threat model | DONE — D-015 |
 | 6.11 | DECISIONS: **where you leaned on AI, and where you deliberately did not** | DONE — D-020 |
 | 6.12 | **Screen recording on a real device**, showing each feature | TODO |
-| 6.13 | Runnable build — an **APK** | DONE — [GitHub Release v1.0.2](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.2). The APK talks to the deployed backend and is verified on a real phone with no cable and no emulators: signs in and loads the lobby from the live server in about three seconds |
+| 6.13 | Runnable build — an **APK** | DONE — [latest GitHub Release](https://github.com/mj789-98/skill-trial-blitz/releases/latest). The APK talks to the deployed backend and is verified on a real phone with no cable and no emulators: signs in and loads the lobby from the live server in about three seconds |
 | 6.14 | Tuning harness + shipped config + the numbers behind it, committed | DONE — tools/sim, tuned-v1, docs/tuning-report.md |
 
 ## 7. Scoring weights
