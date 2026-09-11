@@ -42,6 +42,7 @@ the order they are best read in — the index is the better way in.
 | [D-028](#d-028--what-the-reference-footage-was-actually-for) | What the reference footage was for |
 | [D-029](#d-029--the-wrap-rule-i-had-been-satisfying-half-the-time) | **The wrap rule** (§3) |
 | [D-030](#d-030--a-game-that-could-not-end-and-a-harness-that-could-not-see-it) | **A game that could not end** (§4) |
+| [D-031](#d-031--putting-the-backend-where-a-reviewers-phone-can-reach-it) | **The deployed backend** (§6) |
 
 ---
 
@@ -1303,3 +1304,80 @@ fails silently — a broken bot still produces a confident number in a table.
 The tell was available and I nearly missed it. **When the population ordering stops making
 sense, do not tune the config — check the players.** An RTP is a statement about the people
 in the simulation, and if they are not the people you meant, the number is about nobody.
+
+---
+
+## D-031 — Putting the backend where a reviewer's phone can reach it
+
+**The problem was the deliverable, not the code.** Every build talked to the Firebase emulators
+on the development laptop, reached over `adb reverse` or the LAN. For the person holding the
+cable that is fine. For anyone else it is fatal: a reviewer who installs the APK has no
+emulators, no cable and no route to this machine, so the app opened, waited twelve seconds and
+said it could not reach the server — every time, with nothing they could do about it. The
+in-app address field did not help; it only works for someone running the whole backend
+themselves, and the brief says outright that reviewers may not be able to build the project.
+
+**Where it goes.** `mobileroomgame`, an existing project of mine. Chosen after checking all
+three candidates: on none of them had the Cloud Functions API ever been enabled, so there was
+no deployed function set that a deploy could replace. The Supabase database was already hosted;
+what was missing was Auth and the API. A web app was registered in the project because the app
+uses the Firebase JS SDK, which takes a web config.
+
+**Release builds talk to the cloud, debug builds to the emulators.** Decided by `__DEV__`, with
+`FORCE_BACKEND` in `app/src/api/config.ts` to override either way. The emulator path stays what
+it was — the development environment, where the tests, the seed, parity and the e2e script run.
+The in-app address field is hidden in a cloud build: there is exactly one server, and offering a
+player a field to type another one into is an invitation to break a working app.
+
+**asia-south1, not the us-central1 default.** The Supabase pooler is in ap-south-1, and a single
+Blitz entry is several round trips inside one transaction. From Iowa every one of them would
+cross the planet twice.
+
+**The supplied `db.js` would have failed in the cloud, and nothing local could show it.** Its
+`getPool()` calls `functions.config()`, and in firebase-functions 5.x that call throws whenever
+`K_CONFIGURATION` is set — which is only ever true in a deployed v2 function. The emulator never
+sets it, so all 127 tests pass and every request in production would have failed on its first
+query. The brief says to use `db.js` as given, so the fix lives in `index.js`: the pool is built
+once at cold start with that variable hidden for exactly that call and restored immediately
+after; `config()` returns `{}` as it does locally, the pool is cached, and `config()` is never
+called again. Before touching someone else's environment variable I checked every reader of it
+under `node_modules`. The only other one is google-auth-library's environment detection, which
+checks the Cloud Functions markers first and never reaches it on this runtime. Hidden and
+restored rather than deleted anyway, because "never reaches it" is a claim about someone else's
+code.
+
+**Concurrency 1, because that is what `db.js` was written for.** Its pool holds two connections,
+and its own comment says why: "gen-1 concurrency is 1/instance". v2 defaults to eighty concurrent
+requests per instance, and eighty requests queueing on two connections — some inside a
+transaction that wants a second — is a stall at best. Rather than second-guess a file I was told
+to use unmodified, it gets the runtime it assumes. `maxInstances: 10` is a ceiling on cost, not
+load: these endpoints are public, and without a cap a loop of requests is a bill.
+
+**The database password is a secret, set by the owner, and never a second file.** It is the
+Secret Manager secret `SUPABASE_PG_PASSWORD`, handed to `PG_PASSWORD` in `index.js` before any
+pool exists. The different name is not cosmetic: `functions/.env` is deployed to every project,
+it defines the local Docker password, and Firebase refuses a secret that shares a name with a
+plain environment variable. The four non-secret connection keys live in
+`functions/.env.mobileroomgame`, which is gitignored like every other `.env.*`.
+
+**`sweepNow` is emulator-only.** It takes no auth and touches the database, which is fine on a
+laptop and an open door on a public project — and the one thing it exists to replace, the timer,
+is real in the cloud.
+
+**The shared test account needed a way to fail safely.** The app signs every install into one
+account whose password is in the repo, which is what makes "install and play" possible. Against
+the emulator that costs nothing. Against a real project it is an account anyone can sign into —
+and anyone who signs in can change its password, after which every other install fails to sign
+in at once, because of one person. Nothing is stolen that way: the money is fake and every
+callable acts only on the caller's own uid. But the app would die for every reviewer. So the
+shared account stays the normal path, and if it has been taken away — the email exists but the
+published password no longer matches, or password sign-in has been switched off — that install
+falls back to an anonymous account of its own.
+
+**What I take from it.** The most important defect here was invisible to every check I had.
+127 tests, 1000-case parity and the full e2e loop all run against the emulator, and the emulator
+is precisely the environment where `K_CONFIGURATION` is never set. A green suite said nothing
+about the one runtime a reviewer would actually use. Finding it took reading the dependency's
+source rather than trusting that code which worked locally would work deployed — and the general
+point is that a test suite certifies the environment it runs in, not the one you ship to.
+

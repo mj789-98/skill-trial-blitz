@@ -166,19 +166,31 @@ the other two — see `app/src/api/config.ts`.
 `app/android/app/build/outputs/apk/release/app-release.apk`, arm64-v8a, signed
 with the standard Android debug key so it installs without you generating one.
 
-It has no Metro to ask, so it looks for the backend on `localhost` and you point
-that at your machine over the USB cable:
+**A release build talks to the deployed backend, not to your machine:** Firebase
+project `mobileroomgame`, functions in `asia-south1`, the database on Supabase in
+`ap-south-1`. Install it on any phone with an internet connection and it works —
+no cable, no emulators, no address to type. Why it is built that way, and what it
+took, is in DECISIONS D-031.
 
 ```bash
 adb install -r app-release.apk
+```
+
+**To aim a release build at your local emulators instead** — to play against the
+seeded local database, say — set `FORCE_BACKEND = 'emulator'` in
+`app/src/api/config.ts` and rebuild. That build has no Metro to ask, so it looks
+for the backend on `localhost`, which you point at your machine over the cable:
+
+```bash
 adb reverse tcp:5001 tcp:5001
 adb reverse tcp:9099 tcp:9099
 ```
 
-That works on a physical device and an emulator alike, needs no IP address, no
-rebuild, and no firewall change.
+That works on a physical device and an emulator alike, needs no IP address and
+no firewall change.
 
-**Or set the address in the app, with no cable and no rebuild.** If the backend
+**Or set the address in the app, with no cable and no rebuild** (emulator builds
+only — a cloud build has one server and does not offer the field). If the backend
 is on another machine — or you simply do not want to be tethered — install the
 APK, open it, and wait. With nothing to talk to, the app stops after twelve
 seconds and offers a field:
@@ -210,14 +222,45 @@ credentials:
 | email | `player@skilltrial.test` |
 | password | `blitz-trial-2026` |
 
-That password is in the repo deliberately. It authenticates against an Auth
-emulator on *your* machine holding fake money, and the alternative — a credential
-that has to be sent separately — makes "clone and run" impossible. It is not used
-against any real project.
+That password is in the repo deliberately: the alternative — a credential that
+has to be sent separately — makes "install and play" impossible. In an emulator
+build it authenticates against the Auth emulator on your machine.
+
+In a release build it is a real account on `mobileroomgame`, shared by every
+install — which means anyone who reads this could change its password. Nothing
+is exposed that way (the money is fake, and every call acts only on the caller's
+own uid), but it would lock every other install out at once. So if the shared
+account ever stops working, the app falls back to an anonymous account for that
+install instead of failing. See D-031.
 
 The account starts empty. **+ $10** in the lobby is a mock deposit; it still goes
 through the ledger like every other movement, because even fake money leaves an
 auditable row.
+
+### 5. Deploying the backend (project owner only)
+
+Reviewers never need this — the release APK already points at the deployed
+project. It is here so the deployment is reproducible rather than remembered.
+
+1. The project must be on the **Blaze** plan. Cloud Functions and Secret Manager
+   cannot be enabled on the free plan.
+2. **Authentication → Get started**, then enable **Email/Password** (the shared
+   test account) and **Anonymous** (its fallback).
+3. Store the database password as a secret. It prompts for the value; it is never
+   written to a second file:
+
+   ```bash
+   firebase functions:secrets:set SUPABASE_PG_PASSWORD --project mobileroomgame
+   ```
+
+4. `functions/.env.mobileroomgame` holds the four non-secret connection keys —
+   `PG_HOST`, `PG_PORT`, `PG_DATABASE`, `PG_USER` — and is gitignored.
+5. Deploy, then bring the hosted database's configs up to date:
+
+   ```bash
+   firebase deploy --only functions --project mobileroomgame
+   node tools/db/applySeed.js --env .env.supabase
+   ```
 
 ---
 
@@ -225,7 +268,7 @@ auditable row.
 
 | | command | count |
 | --- | --- | --- |
-| Backend — unit + integration | `npm --prefix functions test` | **93** |
+| Backend — unit + integration | `npm --prefix functions test` | **127** |
 | App — reducer + formatting | `npm --prefix app test` | **18** |
 | End to end, through a real auth token | `npm --prefix functions run test:e2e` | **16 checks** |
 | Generated audio, measured | `SkillApp/Export Audio Preview` in Unity | **8 clips** |
