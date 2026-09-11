@@ -14,15 +14,29 @@
  * use. It is a real Firebase Auth user against the Auth emulator, created on
  * first run if it does not exist.
  *
- * That password is in the repo on purpose. It authenticates against an emulator
- * on the reviewer's own machine holding fake money, and the alternative — a
- * credential they have to be sent separately — makes "clone and run" impossible.
- * Nothing here is used against a real project.
+ * That password is in the repo on purpose: the alternative — a credential a
+ * reviewer has to be sent separately — makes "install and play" impossible.
+ *
+ * ── What changes once there is a real project ────────────────────────────────
+ *
+ * Against the emulator a public password costs nothing. Against the deployed
+ * project it is a shared account anyone can sign into, and anyone who can sign
+ * in can CHANGE ITS PASSWORD. Nothing is stolen that way — the money is fake and
+ * every callable acts only on the caller's own uid — but every other install
+ * would then fail to sign in, and the app would stop working for every reviewer
+ * at once because of one person.
+ *
+ * So the shared account stays the normal path, and if it has been taken away —
+ * the email exists but the password no longer matches, or password sign-in has
+ * been switched off — this install falls back to an anonymous account of its
+ * own. The player gets a working app with a separate balance instead of a dead
+ * one.
  */
 
 import {
   createUserWithEmailAndPassword,
   onAuthStateChanged,
+  signInAnonymously,
   signInWithEmailAndPassword,
   signOut as fbSignOut,
   type User,
@@ -49,6 +63,13 @@ export async function signInAsTestPlayer(): Promise<User> {
     return cred.user;
   } catch (err) {
     const code = (err as { code?: string }).code;
+
+    // Password sign-in is switched off for this project. The shared account
+    // cannot work at all, so do not try to create it either.
+    if (code === 'auth/operation-not-allowed') {
+      return (await signInAnonymously(a)).user;
+    }
+
     const missing =
       code === 'auth/user-not-found' ||
       // Modern Identity Toolkit collapses "no such user" and "wrong password"
@@ -58,12 +79,21 @@ export async function signInAsTestPlayer(): Promise<User> {
       code === 'auth/invalid-credential';
     if (!missing) throw err;
 
-    const cred = await createUserWithEmailAndPassword(
-      a,
-      TEST_ACCOUNT.email,
-      TEST_ACCOUNT.password
-    );
-    return cred.user;
+    try {
+      const cred = await createUserWithEmailAndPassword(
+        a,
+        TEST_ACCOUNT.email,
+        TEST_ACCOUNT.password
+      );
+      return cred.user;
+    } catch (createErr) {
+      // The account exists, yet the published password did not match it: the
+      // password has been changed out from under every install. See the header.
+      if ((createErr as { code?: string }).code === 'auth/email-already-in-use') {
+        return (await signInAnonymously(a)).user;
+      }
+      throw createErr;
+    }
   }
 }
 
