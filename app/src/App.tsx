@@ -28,7 +28,7 @@ import {
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from './api/client';
-import { describeHost, setRuntimeHost } from './api/config';
+import { BACKEND, describeHost, setRuntimeHost } from './api/config';
 import { loadServerHost, normaliseHost, saveServerHost } from './api/serverHost';
 import { ApiError, toApiError } from './api/errors';
 import { signInAsTestPlayer, watchUser } from './api/auth';
@@ -151,11 +151,7 @@ export default function App() {
     if (phase.name !== 'booting' || !hostReady) return;
 
     const timer = setTimeout(() => {
-      setFatal(
-        `No response from the backend at ${describeHost()}. ` +
-        'The emulators may not be running, or this device may not be able to ' +
-        'reach them.'
-      );
+      setFatal(unreachableMessage());
     }, 12000);
 
     return () => clearTimeout(timer);
@@ -366,11 +362,7 @@ export default function App() {
         if (error && games.length === 0 && !profile) {
           return (
             <Fatal
-              message={
-                `No response from the backend at ${describeHost()}. ` +
-                'The emulators may not be running, or this device may not be ' +
-                'able to reach them.'
-              }
+              message={unreachableMessage()}
               onRetry={() => void refresh()}
             />
           );
@@ -518,6 +510,23 @@ function Splash() {
   );
 }
 
+/**
+ * What to tell a player whose backend never answered.
+ *
+ * The emulator wording names the emulators because that is the thing to go and
+ * start. The cloud wording cannot: a player holding a downloaded APK has no
+ * emulators to start and never needed to know they existed. The one thing they
+ * can check is their own connection.
+ */
+function unreachableMessage(): string {
+  return BACKEND === 'cloud'
+    ? `No response from ${describeHost()}. Check this phone's internet ` +
+        'connection and try again.'
+    : `No response from the backend at ${describeHost()}. ` +
+        'The emulators may not be running, or this device may not be able to ' +
+        'reach them.';
+}
+
 /** Sign-in itself failed. Nothing in the app works without it, so say so plainly. */
 /**
  * Sign-in failed, and there is nothing behind it to fall back to.
@@ -551,29 +560,37 @@ function Fatal({ message, onRetry }: { message: string; onRetry: () => void }) {
         exactly as you left it.
       </Txt>
 
-      <Txt variant="small" color={colors.textFaint}>
-        If the backend is on another machine, enter its address:
-      </Txt>
-      <TextInput
-        style={styles.hostInput}
-        value={draft}
-        onChangeText={(text) => {
-          setDraft(text);
-          setSaved(false);
-        }}
-        placeholder="192.168.1.20"
-        placeholderTextColor={colors.textFaint}
-        autoCapitalize="none"
-        autoCorrect={false}
-        keyboardType="url"
-        inputMode="url"
-      />
+      {/* The address field only means something against the emulators. A
+          cloud build has exactly one server and no address a player could
+          usefully type, so offering the field there would be an invitation
+          to break a working app. */}
+      {BACKEND === 'emulator' ? (
+        <>
+          <Txt variant="small" color={colors.textFaint}>
+            If the backend is on another machine, enter its address:
+          </Txt>
+          <TextInput
+            style={styles.hostInput}
+            value={draft}
+            onChangeText={(text) => {
+              setDraft(text);
+              setSaved(false);
+            }}
+            placeholder="192.168.1.20"
+            placeholderTextColor={colors.textFaint}
+            autoCapitalize="none"
+            autoCorrect={false}
+            keyboardType="url"
+            inputMode="url"
+          />
 
-      {saved ? (
-        <Txt variant="small" color={colors.textFaint}>
-          Saved. Close the app completely and reopen it — the connection is
-          configured once, when the app starts.
-        </Txt>
+          {saved ? (
+            <Txt variant="small" color={colors.textFaint}>
+              Saved. Close the app completely and reopen it — the connection is
+              configured once, when the app starts.
+            </Txt>
+          ) : null}
+        </>
       ) : null}
 
       <Button

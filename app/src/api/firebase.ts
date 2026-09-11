@@ -11,6 +11,10 @@
  * instance is created. Calling connect*Emulator twice on the same instance
  * throws, and calling it after the first request has gone out is silently too
  * late — memoising the instance is what makes both impossible.
+ *
+ * Only when BACKEND is 'emulator'. A cloud build talks to the endpoints the SDK
+ * already knows from FIREBASE_CONFIG, and connecting it to an emulator host
+ * would send a reviewer's sign-in to a laptop they cannot reach.
  */
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -28,7 +32,7 @@ import {
   type Functions,
 } from 'firebase/functions';
 
-import { FIREBASE_CONFIG, PORTS, REGION, resolveHost } from './config';
+import { BACKEND, FIREBASE_CONFIG, PORTS, REGION, resolveHost } from './config';
 
 let appInstance: FirebaseApp | null = null;
 let authInstance: Auth | null = null;
@@ -63,15 +67,19 @@ export function auth(): Auth {
     return existing;
   }
 
-  connectAuthEmulator(authInstance, `http://${resolveHost()}:${PORTS.auth}`, {
-    disableWarnings: true,
-  });
+  if (BACKEND === 'emulator') {
+    connectAuthEmulator(authInstance, `http://${resolveHost()}:${PORTS.auth}`, {
+      disableWarnings: true,
+    });
+  }
   return authInstance;
 }
 
 export function functions(): Functions {
   if (functionsInstance) return functionsInstance;
   functionsInstance = getFunctions(app(), REGION);
-  connectFunctionsEmulator(functionsInstance, resolveHost(), PORTS.functions);
+  if (BACKEND === 'emulator') {
+    connectFunctionsEmulator(functionsInstance, resolveHost(), PORTS.functions);
+  }
   return functionsInstance;
 }

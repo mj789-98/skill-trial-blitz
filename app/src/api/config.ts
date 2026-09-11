@@ -53,8 +53,36 @@
 
 import { NativeModules } from 'react-native';
 
-/** The demo project. Matches .firebaserc, and is what the emulators expect. */
-export const PROJECT_ID = 'demo-skill-trial';
+/**
+ * Which backend this build talks to.
+ *
+ * ── Why a release build defaults to the cloud ────────────────────────────────
+ *
+ * Until the deployment existed, every build talked to the Firebase emulators on
+ * the development machine, reached over `adb reverse` or the LAN. That works for
+ * whoever holds the cable and for nobody else: a reviewer who installs the APK
+ * has no emulators, no cable and no route to this laptop, so the app opened,
+ * waited twelve seconds and said it could not reach the server -- every time,
+ * with nothing they could do about it.
+ *
+ * So a RELEASE build talks to the deployed project, and a DEBUG build (Metro,
+ * `__DEV__`) keeps talking to the local emulators, where the tests, the seed and
+ * the fake money live. FORCE_BACKEND overrides either way, for the one case that
+ * wants the other: a release APK aimed at local emulators.
+ */
+const FORCE_BACKEND: 'emulator' | 'cloud' | null = null;
+
+export const BACKEND: 'emulator' | 'cloud' =
+  FORCE_BACKEND ?? (__DEV__ ? 'emulator' : 'cloud');
+
+/**
+ * The Firebase project.
+ *
+ * `demo-skill-trial` is a demo project ID, which the emulators treat as fully
+ * offline and which no real project backs; it matches .firebaserc's default.
+ * `mobileroomgame` is the real project the functions are deployed to.
+ */
+export const PROJECT_ID = BACKEND === 'cloud' ? 'mobileroomgame' : 'demo-skill-trial';
 
 /**
  * Force a specific host, ignoring everything below. Normally empty.
@@ -70,8 +98,16 @@ export const PORTS = {
   functions: 5001,
 } as const;
 
-/** Cloud Functions region. Defaults for onCall are us-central1. */
-export const REGION = 'us-central1';
+/**
+ * Cloud Functions region.
+ *
+ * asia-south1 (Mumbai), not the us-central1 default, because that is where the
+ * database is. The Supabase pooler is in ap-south-1, and a single Blitz entry is
+ * several round trips inside one transaction; from Iowa every one of them would
+ * cross the planet twice. Must match setGlobalOptions in functions/index.js. The
+ * emulator honours the region too, so both modes use the same value.
+ */
+export const REGION = 'asia-south1';
 
 /**
  * The development machine's address, as reachable from wherever this code runs.
@@ -126,6 +162,7 @@ export function resolveHost(): string {
  * into the actual next step.
  */
 export function describeHost(): string {
+  if (BACKEND === 'cloud') return `the game server (${PROJECT_ID}, ${REGION})`;
   const host = resolveHost();
   if (runtimeHost) return `${host} (set on this device)`;
   if (host === 'localhost') return 'localhost (via adb reverse over USB)';
@@ -181,14 +218,29 @@ function hostOf(url: string): string | null {
 /**
  * The Firebase config.
  *
- * The apiKey is a placeholder because a demo project has no real one, and the
- * Auth emulator does not check it. Committing a placeholder is safer than
- * committing a live key — an apiKey is not a secret, but it does identify a real
- * project, and this repo is public.
+ * Against the emulators the apiKey is a placeholder: a demo project has no real
+ * one, and the Auth emulator does not check it.
+ *
+ * Against the cloud it is the real key of the web app registered in
+ * `mobileroomgame`, committed on purpose. A Firebase web API key is not a
+ * credential -- it identifies the project to Google's endpoints and grants
+ * nothing by itself. Every callable here checks a verified ID token, and the
+ * database is not reachable from the client at all. Keeping it out of the repo
+ * would protect nothing and would make the APK impossible to build from a clean
+ * clone.
  */
-export const FIREBASE_CONFIG = {
-  apiKey: 'demo-api-key',
-  authDomain: `${PROJECT_ID}.firebaseapp.com`,
-  projectId: PROJECT_ID,
-  appId: '1:000000000000:android:0000000000000000000000',
-};
+export const FIREBASE_CONFIG =
+  BACKEND === 'cloud'
+    ? {
+        apiKey: 'AIzaSyCSmjUVC2nS83jos2WeAGpkY3o1rcThE0I',
+        authDomain: 'mobileroomgame.firebaseapp.com',
+        projectId: 'mobileroomgame',
+        appId: '1:97905244197:web:2779925abc137ee33527cc',
+        messagingSenderId: '97905244197',
+      }
+    : {
+        apiKey: 'demo-api-key',
+        authDomain: `${PROJECT_ID}.firebaseapp.com`,
+        projectId: PROJECT_ID,
+        appId: '1:000000000000:android:0000000000000000000000',
+      };
