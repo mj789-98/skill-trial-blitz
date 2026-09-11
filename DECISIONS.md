@@ -1384,6 +1384,24 @@ or no, never a value or a length. All nine functions said the password came from
 the value was wrong: it had been pasted into a prompt. Re-set straight from the file with no
 paste, redeployed, and the whole loop passed live.
 
+**Then the phone still could not reach it, and the fault was in the client.** With the backend
+proven live end to end, the release APK signed in within a second and failed every call in about
+twenty milliseconds, and the server logged nothing. Found by elimination on the device: Chrome on
+the same phone reached the functions; a raw XHR and a raw `fetch` from inside the app, with the
+same ID token, both got 200 with real data. Only the SDK's own error, dumped whole, gave it away:
+`customData.url = "/ping"`. `getFunctions(app, 'asia-south1')` decides region-versus-custom-domain
+by trying `new URL(...)`; a browser throws on `'asia-south1'`, React Native's minimal polyfill does
+not, and the SDK concluded it had a custom domain whose address is the empty string. The same path
+reset the region to `us-central1`, so emulator builds were broken too — invisible only because the
+running emulator predated the region change. The app now builds each callable's URL itself
+(`functionUrl` in `config.ts`) and calls `httpsCallableFromURL`, which never consults the parsed
+region.
+
+That fix only arrived because the app was made to say what it was doing. The first release build
+logged nothing and rendered every failure with one generic sentence, so three different causes —
+a slow sign-in, a failed sign-in, a failed lobby load — looked identical. A timestamped startup
+trace and a "Details:" line on the error screen turned a day of guessing into one read of logcat.
+
 **What I take from it.** The most important defect here was invisible to every check I had.
 127 tests, 1000-case parity and the full e2e loop all run against the emulator, and the emulator
 is precisely the environment where `K_CONFIGURATION` is never set. A green suite said nothing

@@ -199,7 +199,7 @@ are in DECISIONS D-018 and D-025.
 | 6.10 | DECISIONS: score-trust threat model | DONE — D-015 |
 | 6.11 | DECISIONS: **where you leaned on AI, and where you deliberately did not** | DONE — D-020 |
 | 6.12 | **Screen recording on a real device**, showing each feature | TODO |
-| 6.13 | Runnable build — an **APK** | PARTIAL — the release APK now talks to the deployed backend, so it works on any phone with an internet connection: no cable, no emulators. What is still missing is somewhere to download it from — it is 169 MB and gitignored, so it needs a GitHub Release asset |
+| 6.13 | Runnable build — an **APK** | PARTIAL — the release APK talks to the deployed backend and is verified on a real phone with no cable and no emulators: signs in, loads the lobby from the live server in about three seconds. What is still missing is somewhere to download it from — it is 169 MB and gitignored, so it needs a GitHub Release asset |
 | 6.14 | Tuning harness + shipped config + the numbers behind it, committed | DONE — tools/sim, tuned-v1, docs/tuning-report.md |
 
 ## 7. Scoring weights
