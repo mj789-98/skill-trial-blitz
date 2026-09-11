@@ -1374,6 +1374,16 @@ shared account stays the normal path, and if it has been taken away — the emai
 published password no longer matches, or password sign-in has been switched off — that install
 falls back to an anonymous account of its own.
 
+**The first live deploy failed every database call, and one log line settled why.** The error
+was `password authentication failed`, which Supabase's pooler only returns once it has *found*
+the user — so host and user were right and the password was not. That has two causes that look
+identical from outside: the secret holds a different value from the one that works locally, or
+it never reached `PG_PASSWORD` and `pg` fell back to the Docker password `.env` deploys as
+`PGPASSWORD`. Rather than guess, a cold-start line now reports whether each piece arrived — yes
+or no, never a value or a length. All nine functions said the password came from the secret, so
+the value was wrong: it had been pasted into a prompt. Re-set straight from the file with no
+paste, redeployed, and the whole loop passed live.
+
 **What I take from it.** The most important defect here was invisible to every check I had.
 127 tests, 1000-case parity and the full e2e loop all run against the emulator, and the emulator
 is precisely the environment where `K_CONFIGURATION` is never set. A green suite said nothing

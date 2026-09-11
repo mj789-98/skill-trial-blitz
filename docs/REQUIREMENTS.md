@@ -28,7 +28,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 1.3 | `azesmway/react-native-unity` to embed | DONE — 1.1.1, builds to APK |
 | 1.4 | Supabase (PostgreSQL) | DONE — ap-south-1, PG 17.6, schema applied, and carrying the shipping configs: `chicken_run:tuned-v1` and `pop_shot:popshot-v1` both active, Blitz on for both games. It had drifted — it was seeded before the tuning harness existed and still held `baseline-v0` — which is why `tools/db/applySeed.js` exists. There are now 42 DB-backed tests (of 124 total). 24 of them ran against the transaction-mode pooler; the 18 added since are verified against local PG 17 only, because they mutate the shared `games` and `blitz_configs` rows and a mid-run failure would leave the hosted database inconsistent. What the pooler run establishes is host compatibility — transaction mode, `SET LOCAL` guards, no cross-statement session state — and that has not changed since. |
 | 1.5 | Firebase Auth | DONE — email/password against the Auth emulator; uid comes from the verified token, proven by the e2e script |
-| 1.6 | Firebase Functions — the API | PARTIAL — runs on the emulator for development; configured for the real project `mobileroomgame` in asia-south1 (region, Secret Manager password, concurrency, and a workaround for the supplied db.js throwing under the v2 runtime — D-031). Not yet deployed: the project must be on the Blaze plan before Cloud Functions or Secret Manager can be enabled |
+| 1.6 | Firebase Functions — the API | DONE — deployed to `mobileroomgame` in asia-south1, nine functions, and verified live end to end: sign-in, deposit through the ledger, quote, enter, a submit claiming 9999 paid on the replayed 0, and the balance moving by exactly the stake. Emulator for development. Runs on nodejs20, which the brief pins; Google stops accepting nodejs20 deploys on 2026-10-30, after which redeploying needs a newer runtime (D-031) |
 
 ### Pinned versions
 
@@ -199,7 +199,7 @@ are in DECISIONS D-018 and D-025.
 | 6.10 | DECISIONS: score-trust threat model | DONE — D-015 |
 | 6.11 | DECISIONS: **where you leaned on AI, and where you deliberately did not** | DONE — D-020 |
 | 6.12 | **Screen recording on a real device**, showing each feature | TODO |
-| 6.13 | Runnable build — an **APK** | PARTIAL — the APK builds and runs from a clean checkout, but it is 169 MB and gitignored, so there is nothing a reviewer can download. Needs a GitHub Release asset |
+| 6.13 | Runnable build — an **APK** | PARTIAL — the release APK now talks to the deployed backend, so it works on any phone with an internet connection: no cable, no emulators. What is still missing is somewhere to download it from — it is 169 MB and gitignored, so it needs a GitHub Release asset |
 | 6.14 | Tuning harness + shipped config + the numbers behind it, committed | DONE — tools/sim, tuned-v1, docs/tuning-report.md |
 
 ## 7. Scoring weights
