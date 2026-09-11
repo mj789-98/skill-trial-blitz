@@ -8,6 +8,8 @@
  */
 
 /** 350 -> "$3.50". Negative amounts are signed, not parenthesised. */
+import type { Settlement } from './types';
+
 export function money(cents: number): string {
   const sign = cents < 0 ? '-' : '';
   const abs = Math.abs(Math.trunc(cents));
@@ -46,4 +48,25 @@ export function secondsUntil(isoTimestamp: string, now: number = Date.now()): nu
   }
 
   return Math.max(0, Math.ceil((target - now) / 1000));
+}
+
+/**
+ * The headline on the result screen.
+ *
+ * Says "Cashed out" only when the round actually ended on a cash-out. It used to
+ * say it for every winning round, which is true of Chicken Run -- a Chicken Run
+ * round can only win by cashing out -- and false of Pop Shot, which has no
+ * cash-out at all: its rounds end when the shot clock runs out. A round the
+ * sweeper settled after the app was closed has no cash-out either.
+ *
+ * Seen on a real Pop Shot win: "Cashed out, $1.50" over a round that nobody had
+ * cashed out of. The money was right; the sentence above it was not.
+ */
+export function resultHeadline(
+  s: Pick<Settlement, 'payoutCents' | 'stakeCents' | 'netCents' | 'endReason'>
+): string {
+  const net = s.netCents ?? s.payoutCents - s.stakeCents;
+  if (net > 0) return s.endReason === 'cash_out' ? 'Cashed out' : 'You won';
+  if (net === 0) return 'Broke even';
+  return 'No payout';
 }

@@ -23,7 +23,7 @@ import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { Button, Card, Label, Txt } from '../ui/components';
 import { colors, space } from '../ui/theme';
-import { money, multiplier } from '../api/format';
+import { money, multiplier, resultHeadline } from '../api/format';
 import type { Settlement } from '../api/types';
 
 interface Props {
@@ -51,7 +51,7 @@ export default function ResultScreen({
         <View style={styles.headline}>
           <Label>{gameName}</Label>
           <Txt variant="title" color={colors.textMuted}>
-            {won ? 'Cashed out' : brokeEven ? 'Broke even' : 'No payout'}
+            {resultHeadline(settlement)}
           </Txt>
           <Txt variant="hero" color={won ? colors.win : brokeEven ? colors.text : colors.loss}>
             {money(settlement.payoutCents)}

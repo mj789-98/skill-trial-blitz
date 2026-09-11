@@ -6,7 +6,7 @@
  * nobody notices until a refund renders as "-$3.5" or "$-3.50".
  */
 
-import { money, multiplier, secondsUntil } from './format';
+import { money, multiplier, resultHeadline, secondsUntil } from './format';
 
 describe('money', () => {
   it('formats whole and part amounts', () => {
@@ -54,5 +54,41 @@ describe('secondsUntil', () => {
     // Fail closed: an offer we cannot date is one we should re-quote, not one
     // we should present as valid forever.
     expect(secondsUntil('not a date', now)).toBe(0);
+  });
+});
+
+describe('resultHeadline', () => {
+  const round = (payoutCents: number, endReason: string | null, stakeCents = 100) => ({
+    payoutCents,
+    stakeCents,
+    endReason,
+  });
+
+  it('says "Cashed out" for a Chicken Run win, which can only be a cash-out', () => {
+    expect(resultHeadline(round(162, 'cash_out'))).toBe('Cashed out');
+  });
+
+  it('never says "Cashed out" for a Pop Shot win: Pop Shot has no cash-out', () => {
+    // The bug this pins: a Pop Shot round that ended on the shot clock was
+    // headlined "Cashed out".
+    expect(resultHeadline(round(150, 'time'))).toBe('You won');
+  });
+
+  it('never says "Cashed out" for a round the sweeper settled', () => {
+    expect(resultHeadline(round(150, null))).toBe('You won');
+    expect(resultHeadline(round(150, undefined as unknown as null))).toBe('You won');
+  });
+
+  it('reports break-even and loss by the money, whatever ended the round', () => {
+    expect(resultHeadline(round(100, 'cash_out'))).toBe('Broke even');
+    expect(resultHeadline(round(100, 'time'))).toBe('Broke even');
+    expect(resultHeadline(round(0, 'death'))).toBe('No payout');
+    expect(resultHeadline(round(35, 'time'))).toBe('No payout');
+  });
+
+  it('trusts the server net over its own arithmetic when both are present', () => {
+    expect(resultHeadline({ payoutCents: 150, stakeCents: 100, netCents: 0, endReason: 'time' })).toBe(
+      'Broke even'
+    );
   });
 });
