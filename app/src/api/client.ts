@@ -12,8 +12,9 @@
  * reads `request.auth.uid`. Sending one would only imply it mattered.
  */
 
-import { httpsCallable } from 'firebase/functions';
+import { httpsCallableFromURL } from 'firebase/functions';
 
+import { functionUrl } from './config';
 import { functions } from './firebase';
 import { toApiError } from './errors';
 import type { GameId } from '../unity/protocol';
@@ -23,7 +24,9 @@ import type { Game, Heartbeat, Profile, Quote, Round, Settlement } from './types
 function callable<Req extends object, Res>(name: string) {
   return async (data?: Req): Promise<Res> => {
     try {
-      const fn = httpsCallable<Req, Res>(functions(), name);
+      // By URL, not by name. Calling by name makes the SDK derive the URL
+      // from a region it has misparsed on React Native; see functionUrl.
+      const fn = httpsCallableFromURL<Req, Res>(functions(), functionUrl(name));
       const result = await fn((data ?? {}) as Req);
       return result.data;
     } catch (err) {

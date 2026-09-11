@@ -244,3 +244,41 @@ export const FIREBASE_CONFIG =
         projectId: PROJECT_ID,
         appId: '1:000000000000:android:0000000000000000000000',
       };
+
+/**
+ * The full URL of a callable on the active backend.
+ *
+ * ── Why the app builds this instead of the SDK ───────────────────────────────
+ *
+ * Because the SDK gets it wrong on React Native, and silently. getFunctions(app,
+ * 'asia-south1') decides whether its second argument is a region or a custom
+ * domain by trying `new URL(...)` on it. In a browser that throws on
+ * 'asia-south1', so it is taken as a region. React Native's URL is a minimal
+ * polyfill that validates nothing without a base URL: it accepts
+ * 'asia-south1', reports an origin of '' and a path of '/', and the SDK
+ * concludes it was handed a custom domain whose address is the empty string.
+ * Every call then went to '/getProfile' -- a URL with no host, which fails on
+ * the device before a byte is sent, surfaces as HTTP status 0, and is reported
+ * as `internal`.
+ *
+ * Found by elimination on a real phone, and nothing short of that could have
+ * found it: every server-side check passed, a raw XHR and a raw fetch to the
+ * same URL with the same token both returned 200, and only the SDK's own error
+ * -- customData.url = "/ping" -- gave it away.
+ *
+ * The same misparse resets the SDK's region to its us-central1 default, so an
+ * emulator build was broken too, calling us-central1 while the functions now
+ * live in asia-south1. It went unnoticed only because the emulator running at
+ * the time predated the region change and still served us-central1.
+ *
+ * So the URL is built here, for both backends, and handed to
+ * httpsCallableFromURL, which never consults the SDK's parsed region at all.
+ * The alternative -- a spec-compliant URL polyfill -- would fix this one call
+ * by changing URL for every library in the app, which is a larger bet than the
+ * bug warrants.
+ */
+export function functionUrl(name: string): string {
+  return BACKEND === 'cloud'
+    ? `https://${REGION}-${PROJECT_ID}.cloudfunctions.net/${name}`
+    : `http://${resolveHost()}:${PORTS.functions}/${PROJECT_ID}/${REGION}/${name}`;
+}
