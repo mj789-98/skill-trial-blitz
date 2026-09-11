@@ -58,7 +58,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 |---|---|---|
 | 2.1 | Match reference screenshots for layout, dimension, orientation | DONE — both games checked frame by frame against the reference recordings; camera framing, prop proportions, traffic pacing and the Pop Shot camera pitch all corrected against it. See D-028 |
 | 2.2 | Tap to jump forward | DONE — verified in a running build |
-| 2.3 | Swipe to jump left / right / back | DONE — untested on touch hardware |
+| 2.3 | Swipe to jump left / right / back | DONE — played on a real device |
 | 2.4 | Hold **"Cash Out"** to quit and keep points | DONE — 700ms hold with ring |
 | 2.5 | Score 0 if you die | DONE — in sim, tested |
 | 2.6 | Don't fall in the water | DONE — in sim |
@@ -68,7 +68,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 2.10 | No time limit; ends on cash out, death, or idle | DONE |
 | 2.11 | Assets / prefabs | N/A by choice — every prop is generated in code from two meshes (Props.cs, PopShotView.cs). No imported art, no asset pipeline. Stated rather than hidden: see D-026 and D-028 |
 | 2.12 | Sound effects | DONE — 8 clips, synthesised in code; measured by an editor check that fails the build on silence or clipping |
-| 2.13 | Haptics | DONE — Android VibrationEffect via JNI, per-event duration and amplitude; untested on hardware |
+| 2.13 | Haptics | DONE — Android VibrationEffect via JNI, per-event duration and amplitude; ships in the device build, switchable from the lobby |
 | 2.14 | **Playable** — smooth, responsive, fun | DONE — played on a real device across many rounds; sound, haptics, lit shading, real props. The device passes found bugs no test could (D-026) |
 
 ## 3. Blitz — REQUIRED
@@ -121,7 +121,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 3.4.3 | Interrupted round → exactly one outcome, once | DONE — sweeper; a submit racing it produces exactly one payout |
 | 3.4.4 | Handle disconnects, duplicate submits, app kills | DONE — all three tested |
 | 3.4.5 | Curve shown pre-entry is the curve paid on | DONE — copied into the round row |
-| 3.4.6 | **UI is a requirement.** Real copy, real layout | DONE — four screens, real copy; not yet seen on a device |
+| 3.4.6 | **UI is a requirement.** Real copy, real layout | DONE — four screens, real copy; verified on a real phone against the live backend |
 | 3.4.7 | States: loading, error, insufficient balance, win, loss | DONE — domain error codes mapped to player-readable text |
 | 3.4.8 | Transitions and feel | PARTIAL - Unity stays mounted so entering a round is instant; no screen transition animations, see D-016 |
 | 3.4.9 | Blitz enableable per game, not hard-wired | DONE — `games.blitz_enabled` |

@@ -28,7 +28,7 @@ the order they are best read in — the index is the better way in.
 | [D-014](#d-014--the-line-between-hard-and-unwinnable) | **Hard vs unwinnable** (§2.6.4) |
 | [D-015](#d-015--threat-model-what-the-defence-catches-and-what-it-does-not) | Threat model |
 | [D-016](#d-016--a-state-machine-instead-of-a-navigation-stack) | State machine, not a navigator |
-| [D-017](#d-017--firebase-js-sdk-against-a-demo-project) | Firebase JS SDK, demo project |
+| [D-017](#d-017--firebase-js-sdk-and-a-demo-project-for-development) | Firebase JS SDK; demo project for development |
 | [D-018](#d-018--what-was-cut) | What was cut |
 | [D-019](#d-019--what-id-build-next-in-order) | What I'd build next |
 | [D-020](#d-020--where-i-leaned-on-ai-and-where-i-deliberately-did-not) | **Where I leaned on AI** |
@@ -651,16 +651,25 @@ answer by reading one screen of code rather than auditing four.
 
 ---
 
-## D-017 — Firebase JS SDK against a demo project
+## D-017 — Firebase JS SDK, and a demo project for development
 
-**Call.** The `firebase` JS SDK, not `@react-native-firebase`. Project ID
-`demo-skill-trial`, which the Firebase emulators treat as fully offline.
+**Call.** The `firebase` JS SDK, not `@react-native-firebase`. Development runs against
+project ID `demo-skill-trial`, which the Firebase emulators treat as fully offline. Release
+builds run against the real project `mobileroomgame` (D-031).
 
-**Why.** Creating a real Firebase project failed on a Google Cloud **per-account project
-quota**. `@react-native-firebase` requires a `google-services.json` that only a real
-project can issue, so it was not available. The JS SDK takes a plain config object and an
-explicit emulator host, so the app runs from a clean clone with no cloud project, no
-service account, and no native rebuild. The brief does not require a deployed backend.
+**Why the JS SDK.** At the start a real Firebase project could not be created — a Google
+Cloud **per-account project quota** refused it — and `@react-native-firebase` needs a
+`google-services.json` that only a real project can issue. The JS SDK takes a plain config
+object and an explicit emulator host, so the app ran from a clean clone with no cloud
+project, no service account and no native rebuild.
+
+That choice held up when the backend was deployed later, into an existing project rather
+than a new one: pointing a release build at the real project was a change of config, not a
+native rebuild or a new SDK.
+
+**Why the demo project stays.** It is still the development environment. The tests, the
+seed, the parity check and the e2e script all run against it, offline, with fake money that
+resets with the container. The deployed project was added beside it, not instead of it.
 
 **What it costs, stated plainly.** Auth persistence goes through `AsyncStorage` rather
 than the native keychain, and there is no native crash reporting. For a trial that has to
@@ -690,7 +699,10 @@ The brief asks for this explicitly, and asks that the *game* not be what gets cu
   because the argument against it still stands — a second game less finished than the
   first costs points in game feel, judgement and polish at once. What it bought instead
   is real, and is in D-025: the second game exposed an engine defect one game could not.
-- **A deployed backend.** Blocked by the Cloud project quota (D-017), and not required.
+- ~~**A deployed backend.**~~ **Deployed after all**, to `mobileroomgame` in asia-south1,
+  and verified end to end on a real phone with no cable and no emulators (D-031). It was
+  never required — but without it the downloadable APK had no server to reach, which made
+  the APK deliverable hollow for anyone who was not holding a USB cable.
 - **Rate limiting, device attestation, bot detection.** Named in D-015 rather than
   half-built. A token defence that catches nothing is worse than a documented gap.
 - **Cross-game skill priors.** Discussed in D-013, not built.
@@ -699,12 +711,19 @@ The brief asks for this explicitly, and asks that the *game* not be what gets cu
   property.
 - **Transition animations and deep links.** Consequence of D-016.
 
-**Not finished, which is different from cut.**
+**Since finished.** This list once had a "not finished" half. All of it has since been
+done, and is recorded here rather than deleted, because what was missing is part of the
+account:
 
-- Sound effects and haptics in Chicken Run. This is the one that most affects *game
-  feel*, which is 25% of the score. It is a genuine gap, not a decision.
-- Art assets and prefabs — the game renders with primitives and materials.
-- Device testing of touch input, frame pacing and the release APK.
+- **Sound effects and haptics** — synthesised in code, eight clips, with a check that fails
+  the build on silence or clipping; haptics through Android `VibrationEffect`.
+- **Device testing** of touch input, frame pacing and the release APK — played across many
+  rounds on a real phone (D-021, D-026), and the downloadable APK verified against the live
+  backend (D-031).
+- **Art.** Not left unfinished but decided: every prop is generated in code, with no
+  imported assets (D-026).
+
+What is still open is D-019.
 
 ---
 
@@ -713,16 +732,24 @@ The brief asks for this explicitly, and asks that the *game* not be what gets cu
 1. **Record reach separately from score.** The uncensored skill signal from D-014.
    Schema, simulation, settlement, engine, tests. It is the difference between a target
    engine that adapts and one that has a stable wrong answer.
-2. **Audio and haptics in Chicken Run.** Highest ratio of perceived quality to effort in
-   the whole project, and it is 25% of the score.
-3. **A partial trace with each heartbeat.** Closes threat 1 in D-015 and makes the
+2. **A partial trace with each heartbeat.** Closes threat 1 in D-015 and makes the
    abandoned-round path verifiable rather than merely bounded.
-4. **Rate limiting on quote and enter.** Cheap, and its absence is embarrassing rather
-   than dangerous.
+3. **Rate limiting on quote and enter, and App Check.** Sharper now that the backend is
+   public: anyone holding the APK can call it. `maxInstances` caps what abuse can cost, not
+   whether it can happen.
+4. **Restrict the Firebase web API key** to the two APIs the app actually calls — Identity
+   Toolkit and Token Service. The key is public by design and ships inside the APK, so
+   hiding it achieves nothing; but it is currently unrestricted on a project with billing
+   switched on, which is the real exposure GitHub's secret scanner was pointing at.
 5. **Real archetype weights.** Replace the estimated population in the harness with
    measured behaviour and re-tune. Everything in D-012 is conditional on that estimate.
-6. **Pop Shot**, once 1–4 are done — mostly because a second game is the strongest
-   possible test of the claim in D-013 that adding one does not touch the money path.
+6. **Move the functions off Node.js 20** before Google stops accepting nodejs20 deploys on
+   2026-10-30. The live deployment keeps running after that date; redeploying does not.
+   The brief pins Node 20, so this is a conversation before it is a change.
+
+**Done since this list was first written:** audio and haptics in Chicken Run; Pop Shot,
+built at the reviewer's direction (D-018, D-022 to D-025, D-030); and a deployed backend
+(D-031).
 
 ---
 

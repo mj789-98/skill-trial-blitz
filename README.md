@@ -81,6 +81,11 @@ docs/         Requirements inventory, tuning report.
 
 ## Running it from a clean checkout
 
+**To play, you need none of this.** Install the APK from the
+[v1.0.1 release](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.1):
+it talks to the deployed backend (DECISIONS D-031). What follows is for running and
+changing the project locally.
+
 Four things run: **Postgres**, the **Firebase emulators**, **Metro**, and the
 **app**. The first three are on your development machine; the app is on a device
 or emulator.
