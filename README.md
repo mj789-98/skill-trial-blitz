@@ -27,7 +27,11 @@ macOS host, so iOS was never actually available. See `DECISIONS.md` → D-001.
 New players are capped at a $1 entry and a 1.5× payout for their first rounds —
 that is the cold-start protection (D-011), not a bug.
 
-**See it running:** a one-minute [screen recording on a real phone](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.3/screen-recording-v1.0.3.mp4).
+**See it running:** a one-minute [screen recording on a real phone](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.3/screen-recording-v1.0.3.mp4), plus two screens the recording does not reach:
+
+| Not enough balance for a stake | Server unreachable |
+|---|---|
+| <img src="docs/screenshots/insufficient-balance.png" width="270" alt="Lobby: the $20 stake greyed out with the line 'Your balance ($10.29) covers entries up to $10.00'; Pop Shot's stakes held back by the new-player cap"> | <img src="docs/screenshots/cannot-reach-server.png" width="270" alt="'Cannot reach the server' screen: nothing has been charged, with a Try again button"> |
 
 ---
 
