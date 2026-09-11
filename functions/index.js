@@ -26,6 +26,80 @@
 
 const { onCall, HttpsError } = require('firebase-functions/v2/https');
 const { onSchedule } = require('firebase-functions/v2/scheduler');
+const { setGlobalOptions } = require('firebase-functions/v2');
+
+// ── Where this runs ─────────────────────────────────────────────────────────
+//
+// Two backends run this same file: the local emulators, where the tests, the
+// seed and the fake money live, and the deployed project `mobileroomgame`,
+// which is what a reviewer's downloaded APK talks to.
+
+const IN_EMULATOR = process.env.FUNCTIONS_EMULATOR === 'true';
+
+setGlobalOptions({
+  // Mumbai, beside the database. The Supabase pooler is in ap-south-1, and one
+  // Blitz entry is several round trips inside a single transaction; from the
+  // us-central1 default every one of them would cross the planet twice. The
+  // app's REGION in app/src/api/config.ts must match.
+  region: 'asia-south1',
+
+  // One request per instance, which is what db.js was written for. Its pool
+  // holds `max: 2` connections, and its own comment says why: "gen-1
+  // concurrency is 1/instance". v2 defaults to EIGHTY concurrent requests per
+  // instance, and eighty requests queueing on two connections -- some of them
+  // inside a transaction that wants a second -- is a stall at best. Rather than
+  // second-guess a file the brief says to use as given, give it the runtime it
+  // assumes.
+  concurrency: 1,
+
+  // A ceiling on cost, not on load. These endpoints are public -- anyone with
+  // the APK can call them -- and without a cap a loop of requests is a bill.
+  // Ten rather than five because concurrency 1 makes each instance one request
+  // wide.
+  maxInstances: 10,
+
+  // The database password is a Secret Manager secret in the cloud and never a
+  // file. Declared only outside the emulator: locally the password is the
+  // throwaway Docker one and comes from functions/.env as it always has.
+  ...(IN_EMULATOR ? {} : { secrets: ['SUPABASE_PG_PASSWORD'] }),
+});
+
+// db.js reads PG_PASSWORD. The secret is exposed under its own name, which is
+// deliberately NOT PG_PASSWORD: functions/.env deploys to every project, and a
+// secret sharing a name with a plain environment variable is refused at deploy.
+// So it arrives as SUPABASE_PG_PASSWORD and is handed over here, before
+// anything has built a pool.
+if (process.env.SUPABASE_PG_PASSWORD) {
+  process.env.PG_PASSWORD = process.env.SUPABASE_PG_PASSWORD;
+}
+
+// ── db.js and the v2 runtime ────────────────────────────────────────────────
+//
+// db.js is supplied by the brief and used unmodified. Its getPool() calls
+// functions.config() -- the v1 runtime-config API -- and in firebase-functions
+// 5.x that call THROWS whenever K_CONFIGURATION is set, which is only ever the
+// case in a deployed v2 function. The emulator never sets it, so every local
+// test passes and every request in the cloud would fail on its first query.
+//
+// So the pool is built once, here, at cold start, with K_CONFIGURATION hidden
+// for exactly that one call and restored immediately after. config() then does
+// what it does locally -- finds no runtime config and returns {} -- the pool is
+// cached by db.js, and config() is never called again.
+//
+// Why hide it rather than delete it: the only other reader under node_modules
+// is google-auth-library's environment detection, which checks the Cloud
+// Functions markers first and never reaches this variable on this runtime. But
+// "never reaches" is a claim about someone else's code, and restoring the value
+// costs one line.
+if (process.env.K_CONFIGURATION) {
+  const saved = process.env.K_CONFIGURATION;
+  delete process.env.K_CONFIGURATION;
+  try {
+    require('./db').getPool();
+  } finally {
+    process.env.K_CONFIGURATION = saved;
+  }
+}
 
 const { query } = require('./db');
 const { createQuote } = require('./blitz/quote');
@@ -258,5 +332,11 @@ exports.sweepRounds = onSchedule('every 1 minutes', async () => {
  * The emulator registers scheduled functions but does not fire them on a timer,
  * so without this the sweeper could not be demonstrated locally — and it is one
  * of the more interesting things to show working.
+ *
+ * Emulator only. It takes no auth and touches the database, which is fine on a
+ * laptop and is an open door on a public project -- and the one thing it
+ * exists to replace, the timer, is real in the cloud.
  */
-exports.sweepNow = onCall(async () => sweepStaleRounds());
+if (IN_EMULATOR) {
+  exports.sweepNow = onCall(async () => sweepStaleRounds());
+}

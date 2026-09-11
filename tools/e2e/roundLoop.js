@@ -25,7 +25,10 @@ const {
 } = require(path.join(__dirname, '..', '..', 'functions', 'sim', 'chickenRun'));
 
 const AUTH = 'http://127.0.0.1:9099/identitytoolkit.googleapis.com/v1/accounts';
-const FN = 'http://127.0.0.1:5001/demo-skill-trial/us-central1';
+// asia-south1, matching setGlobalOptions in functions/index.js. The emulator
+// mounts every function under its region, so a stale region here is not a
+// slower call -- it is a 404 on every one of them.
+const FN = 'http://127.0.0.1:5001/demo-skill-trial/asia-south1';
 
 /**
  * Load functions/.env into this process, the way the emulator loads it into
