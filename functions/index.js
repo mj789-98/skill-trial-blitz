@@ -101,6 +101,24 @@ if (process.env.K_CONFIGURATION) {
   }
 }
 
+// ── One line at cold start saying what the database will be given ───────────
+//
+// Yes/no only. It never prints the password, its length, the host or the user
+// -- only whether each arrived. Added after the first deploy failed with
+// "password authentication failed", which has two very different causes that
+// look identical from outside: the secret holds the wrong value, or it never
+// reached PG_PASSWORD and pg fell back to the Docker password that .env
+// deploys as PGPASSWORD. This tells them apart from the first request's log
+// rather than by guesswork.
+if (!IN_EMULATOR && process.env.K_SERVICE) {
+  console.log(
+    '[boot] db config: password from ' +
+      (process.env.SUPABASE_PG_PASSWORD ? 'secret' : 'NOTHING (check the secret binding)') +
+      `, PG_HOST ${process.env.PG_HOST ? 'set' : 'MISSING'}` +
+      `, PG_USER ${process.env.PG_USER ? 'set' : 'MISSING'}`
+  );
+}
+
 const { query } = require('./db');
 const { createQuote } = require('./blitz/quote');
 const { enterRound } = require('./blitz/enter');
