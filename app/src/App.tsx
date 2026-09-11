@@ -59,6 +59,8 @@ export default function App() {
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fatal, setFatal] = useState<string | null>(null);
+  /** What actually went wrong, shown under the player-facing message. */
+  const [failure, setFailure] = useState<string | null>(null);
   /** Bumped by Retry, to re-arm the boot deadline and re-run sign-in. */
   const [bootAttempt, setBootAttempt] = useState(0);
   const [feedback, setFeedback] = useState<FeedbackSettings>(DEFAULT_SETTINGS);
@@ -107,9 +109,13 @@ export default function App() {
       .then((host) => {
         if (cancelled) return;
         setRuntimeHost(host);
+        bootLog('saved address loaded');
         setHostReady(true);
       })
-      .catch(() => setHostReady(true));
+      .catch(() => {
+        bootLog('saved address unreadable, continuing');
+        setHostReady(true);
+      });
     return () => {
       cancelled = true;
     };
@@ -118,15 +124,29 @@ export default function App() {
   useEffect(() => {
     if (!hostReady) return;
 
+    bootLog('waiting for sign-in state');
     const unsubscribe = watchUser((user) => {
       if (user) {
+        bootLog(`signed in (${user.isAnonymous ? 'anonymous' : 'shared account'})`);
+        // A late sign-in supersedes the deadline. Without this, a sign-in that
+        // took thirteen seconds left "cannot reach the server" up for good over
+        // a perfectly good session: the deadline set `fatal`, the lobby was
+        // ready underneath it, and nothing ever cleared it.
+        setFatal(null);
+        setFailure(null);
         dispatch({ type: 'SIGNED_IN' });
         return;
       }
       // No persisted session: sign in as the seeded test player. The brief asks
       // for an account a reviewer can log in with, and making that automatic
       // means a clean install lands in the lobby rather than on a form.
-      signInAsTestPlayer().catch((err) => setFatal(toApiError(err).message));
+      bootLog('no saved session, signing in');
+      signInAsTestPlayer().catch((err) => {
+        const e = toApiError(err);
+        bootLog(`sign-in failed: ${e.code} ${e.message}`);
+        setFailure(`${e.code}: ${e.message}`);
+        setFatal(e.message);
+      });
     });
     return unsubscribe;
   }, [bootAttempt, hostReady]);
@@ -151,6 +171,8 @@ export default function App() {
     if (phase.name !== 'booting' || !hostReady) return;
 
     const timer = setTimeout(() => {
+      bootLog('deadline: sign-in still unfinished after 12s');
+      setFailure('sign-in had not finished after 12 seconds');
       setFatal(unreachableMessage());
     }, 12000);
 
@@ -160,13 +182,19 @@ export default function App() {
   // ── Loading the lobby ─────────────────────────────────────────────────────
 
   const refresh = useCallback(async () => {
+    bootLog('lobby: loading profile and games');
     try {
       const [nextProfile, nextGames] = await Promise.all([api.profile(), api.games()]);
       setProfile(nextProfile);
       setGames(nextGames);
       setError(null);
+      setFailure(null);
+      bootLog(`lobby: loaded (${nextGames.length} games)`);
     } catch (err) {
-      setError(toApiError(err).playerMessage);
+      const e = toApiError(err);
+      bootLog(`lobby: failed: ${e.code} ${e.message}`);
+      setFailure(`${e.code}: ${e.message}`);
+      setError(e.playerMessage);
     }
   }, []);
 
@@ -338,6 +366,7 @@ export default function App() {
       return (
         <Fatal
           message={fatal}
+          detail={failure}
           onRetry={() => {
             setFatal(null);
             setBootAttempt((n) => n + 1);
@@ -363,6 +392,7 @@ export default function App() {
           return (
             <Fatal
               message={unreachableMessage()}
+              detail={failure}
               onRetry={() => void refresh()}
             />
           );
@@ -450,6 +480,7 @@ export default function App() {
     changeFeedback,
     enter,
     error,
+    failure,
     fatal,
     feedback,
     games,
@@ -511,6 +542,20 @@ function Splash() {
 }
 
 /**
+ * A timestamped startup trace, to logcat.
+ *
+ * console.warn because a release build keeps warnings in the device log under
+ * the ReactNativeJS tag; `adb logcat ReactNativeJS:W *:S` shows them. Added when
+ * the first cloud build sat on "cannot reach the server" while the server was
+ * demonstrably up and never received a call: the app gave no way to see which
+ * step it was stuck on.
+ */
+const BOOT_T0 = Date.now();
+function bootLog(msg: string): void {
+  console.warn(`[boot +${((Date.now() - BOOT_T0) / 1000).toFixed(1)}s] ${msg}`);
+}
+
+/**
  * What to tell a player whose backend never answered.
  *
  * The emulator wording names the emulators because that is the thing to go and
@@ -536,7 +581,15 @@ function unreachableMessage(): string {
  * a player who cannot get past it has no way to reach a settings screen
  * anyway.
  */
-function Fatal({ message, onRetry }: { message: string; onRetry: () => void }) {
+function Fatal({
+  message,
+  detail,
+  onRetry,
+}: {
+  message: string;
+  detail?: string | null;
+  onRetry: () => void;
+}) {
   const [draft, setDraft] = useState('');
   const [saved, setSaved] = useState(false);
 
@@ -555,6 +608,14 @@ function Fatal({ message, onRetry }: { message: string; onRetry: () => void }) {
       <Txt variant="small" color={colors.textFaint}>
         {message}
       </Txt>
+      {/* The generic message is for the player; this line is for whoever they
+          send a screenshot to. Without it every failure looked the same, and
+          the only way to tell them apart was a cable and logcat. */}
+      {detail ? (
+        <Txt variant="small" color={colors.textFaint}>
+          Details: {detail}
+        </Txt>
+      ) : null}
       <Txt variant="small" color={colors.textFaint}>
         Nothing has been charged. Your balance lives on the server and is
         exactly as you left it.

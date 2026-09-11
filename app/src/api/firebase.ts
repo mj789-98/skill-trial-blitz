@@ -41,6 +41,7 @@ let functionsInstance: Functions | null = null;
 export function app(): FirebaseApp {
   if (appInstance) return appInstance;
   appInstance = getApps().length ? getApp() : initializeApp(FIREBASE_CONFIG);
+  console.warn(`[firebase] backend=${BACKEND} project=${FIREBASE_CONFIG.projectId} region=${REGION}`);
   return appInstance;
 }
 

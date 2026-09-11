@@ -59,6 +59,7 @@ export const TEST_ACCOUNT = {
 export async function signInAsTestPlayer(): Promise<User> {
   const a = auth();
   try {
+    console.warn('[auth] signing in with the shared account');
     const cred = await signInWithEmailAndPassword(a, TEST_ACCOUNT.email, TEST_ACCOUNT.password);
     return cred.user;
   } catch (err) {
@@ -67,6 +68,7 @@ export async function signInAsTestPlayer(): Promise<User> {
     // Password sign-in is switched off for this project. The shared account
     // cannot work at all, so do not try to create it either.
     if (code === 'auth/operation-not-allowed') {
+      console.warn('[auth] password sign-in is off; falling back to anonymous');
       return (await signInAnonymously(a)).user;
     }
 
@@ -90,6 +92,7 @@ export async function signInAsTestPlayer(): Promise<User> {
       // The account exists, yet the published password did not match it: the
       // password has been changed out from under every install. See the header.
       if ((createErr as { code?: string }).code === 'auth/email-already-in-use') {
+        console.warn('[auth] shared account password changed; falling back to anonymous');
         return (await signInAnonymously(a)).user;
       }
       throw createErr;
