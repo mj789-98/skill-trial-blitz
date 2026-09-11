@@ -23,7 +23,7 @@ import { Pressable, RefreshControl, ScrollView, StyleSheet, Switch, View } from 
 
 import { Button, Card, ErrorNote, Label, Txt } from '../ui/components';
 import { colors, radius, space } from '../ui/theme';
-import { money } from '../api/format';
+import { money, stakeHint } from '../api/format';
 import type { Game, Profile } from '../api/types';
 import type { FeedbackSettings } from '../api/settings';
 import type { GameId } from '../unity/protocol';
@@ -145,6 +145,11 @@ export default function LobbyScreen({
                     you play a few rounds.
                   </Txt>
                 ) : null}
+                <StakeHint
+                  balanceCents={profile?.balanceCents ?? 0}
+                  tiersCents={game.stakeTiersCents}
+                  capCents={isBootstrapping(stats) ? game.bootstrapMaxStakeCents : null}
+                />
               </View>
             ) : (
               <Txt variant="small" color={colors.textFaint}>
@@ -156,6 +161,24 @@ export default function LobbyScreen({
       })}
     </ScrollView>
   );
+}
+
+/** The reason, if any, that a stake is greyed out for lack of money. */
+function StakeHint({
+  balanceCents,
+  tiersCents,
+  capCents,
+}: {
+  balanceCents: number;
+  tiersCents: number[];
+  capCents: number | null;
+}) {
+  const hint = stakeHint(balanceCents, tiersCents, capCents);
+  return hint ? (
+    <Txt variant="small" color={colors.textFaint}>
+      {hint}
+    </Txt>
+  ) : null;
 }
 
 /**

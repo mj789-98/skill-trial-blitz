@@ -6,7 +6,7 @@
  * nobody notices until a refund renders as "-$3.5" or "$-3.50".
  */
 
-import { money, multiplier, resultHeadline, secondsUntil } from './format';
+import { money, multiplier, resultHeadline, secondsUntil, stakeHint } from './format';
 
 describe('money', () => {
   it('formats whole and part amounts', () => {
@@ -89,6 +89,35 @@ describe('resultHeadline', () => {
   it('trusts the server net over its own arithmetic when both are present', () => {
     expect(resultHeadline({ payoutCents: 150, stakeCents: 100, netCents: 0, endReason: 'time' })).toBe(
       'Broke even'
+    );
+  });
+});
+
+describe('stakeHint', () => {
+  const tiers = [100, 300, 500, 1000, 2000];
+
+  it('says nothing when every stake is affordable', () => {
+    expect(stakeHint(3000, tiers, null)).toBeNull();
+    expect(stakeHint(2000, tiers, null)).toBeNull();
+  });
+
+  it('names the largest stake the balance still covers', () => {
+    // The case seen on the device: $10 left after losing a $20 entry.
+    expect(stakeHint(1000, tiers, null)).toBe(
+      'Your balance ($10.00) covers entries up to $10.00. Tap + $10 to add more.'
+    );
+  });
+
+  it('says so plainly when no stake is affordable', () => {
+    expect(stakeHint(50, tiers, null)).toBe(
+      'Your balance ($0.50) does not cover an entry yet. Tap + $10 to add more.'
+    );
+  });
+
+  it('leaves stakes above the new-player cap to the cap line', () => {
+    expect(stakeHint(5000, tiers, 100)).toBeNull();
+    expect(stakeHint(50, tiers, 100)).toBe(
+      'Your balance ($0.50) does not cover an entry yet. Tap + $10 to add more.'
     );
   });
 });

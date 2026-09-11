@@ -70,3 +70,31 @@ export function resultHeadline(
   if (net === 0) return 'Broke even';
   return 'No payout';
 }
+
+/**
+ * Why some Blitz stakes are greyed out for lack of money, or null if none are.
+ *
+ * The lobby disables a stake the balance cannot cover, which is the safe thing
+ * to do -- but it did it silently, so a greyed-out $20 button looked broken.
+ * The new-player cap already had a sentence explaining its greyed-out stakes;
+ * money had none. This is that sentence.
+ *
+ * Stakes above the new-player cap are left to the cap's own line (pass the cap
+ * while the player is still bootstrapping, null after), so a stake is never
+ * explained twice or explained with the wrong reason.
+ */
+export function stakeHint(
+  balanceCents: number,
+  tiersCents: number[],
+  capCents: number | null
+): string | null {
+  const allowed = capCents === null ? tiersCents : tiersCents.filter((c) => c <= capCents);
+  if (!allowed.some((c) => c > balanceCents)) return null;
+
+  const affordable = allowed.filter((c) => c <= balanceCents);
+  const balance = money(balanceCents);
+  if (affordable.length === 0) {
+    return `Your balance (${balance}) does not cover an entry yet. Tap + $10 to add more.`;
+  }
+  return `Your balance (${balance}) covers entries up to ${money(Math.max(...affordable))}. Tap + $10 to add more.`;
+}
