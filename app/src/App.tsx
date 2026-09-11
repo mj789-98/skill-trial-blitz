@@ -29,6 +29,7 @@ import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 
 import { api } from './api/client';
 import { BACKEND, describeHost, setRuntimeHost } from './api/config';
+import { ScreenTransition } from './ui/ScreenTransition';
 import { loadServerHost, normaliseHost, saveServerHost } from './api/serverHost';
 import { ApiError, toApiError } from './api/errors';
 import { signInAsTestPlayer, watchUser } from './api/auth';
@@ -526,7 +527,10 @@ export default function App() {
           edges={phase.name === 'round' ? [] : ['top', 'bottom']}
           pointerEvents="box-none"
         >
-          {content}
+          {/* Keyed on the screen, not on its data: moving to a different screen
+              fades it in; a refresh of the same one does not. Unity is outside
+              this wrapper and is never animated. See ui/ScreenTransition.tsx. */}
+          <ScreenTransition screenKey={fatal ? 'fatal' : phase.name}>{content}</ScreenTransition>
         </SafeAreaView>
       </View>
     </SafeAreaProvider>

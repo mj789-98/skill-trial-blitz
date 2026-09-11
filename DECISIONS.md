@@ -630,8 +630,8 @@ union in `app/src/flow/roundFlow.ts`.
 3. **Two fewer native modules** (`react-native-screens`, `react-native-gesture-handler`)
    in a build that already required seven distinct fixes to get through Gradle 9.
 
-**What it costs.** No transition animations, no deep links, and no free hardware back
-button. For four screens, one of which is a fullscreen game, that is a good trade. A
+**What it costs.** No built-in transition animations (added separately since — see below),
+no deep links, and no free hardware back button. For four screens, one of which is a fullscreen game, that is a good trade. A
 fifth screen would not change it; a tab bar would.
 
 **Correction, after running it on a phone.** That last item was not a missing nicety. With
@@ -643,6 +643,15 @@ in one line.
 It is now handled explicitly, using the reducer's own rules: back leaves a screen, refuses
 to leave a **paid** round, and from the lobby is allowed to background the app, because
 that genuinely is the top of this app's stack.
+
+**Transitions, added later.** "No transition animations" was a cost of dropping the
+navigator, not of the state machine: a navigator brings its own, and removing it removed
+them. They are now a small `ScreenTransition` wrapper — a 220 ms fade-and-rise keyed on the
+phase — around the screen layer only. Unity sits below that layer and is never animated,
+covered differently or remounted, so reason 1 above is untouched. A new screen fades in over
+the app's own opaque background rather than over Unity, so a menu change never flashes a
+game frame through a half-transparent screen, and it does nothing at all when the phone's
+Reduce motion setting is on.
 
 **Related: exactly one file can spend money.** `App.tsx` makes every API call; screens are
 given data and callbacks and render. `enter` and `submit` are the calls that move money,

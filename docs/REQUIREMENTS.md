@@ -123,7 +123,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 3.4.5 | Curve shown pre-entry is the curve paid on | DONE — copied into the round row |
 | 3.4.6 | **UI is a requirement.** Real copy, real layout | DONE — four screens, real copy; verified on a real phone against the live backend |
 | 3.4.7 | States: loading, error, insufficient balance, win, loss | DONE — domain error codes mapped to player-readable text |
-| 3.4.8 | Transitions and feel | PARTIAL - Unity stays mounted so entering a round is instant; no screen transition animations, see D-016 |
+| 3.4.8 | Transitions and feel | DONE — Unity stays mounted so entering a round is instant, and every change of screen fades and rises in over 220 ms, animating only the screen layer above Unity; switched off by the phone's Reduce motion setting. See D-016 |
 | 3.4.9 | Blitz enableable per game, not hard-wired | DONE — `games.blitz_enabled` |
 
 ### 3.5 Decisions to state in DECISIONS.md
