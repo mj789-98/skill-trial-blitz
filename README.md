@@ -82,7 +82,7 @@ docs/         Requirements inventory, tuning report.
 ## Running it from a clean checkout
 
 **To play, you need none of this.** Install the APK from the
-[v1.0.1 release](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.1):
+[v1.0.2 release](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.2):
 it talks to the deployed backend (DECISIONS D-031). What follows is for running and
 changing the project locally.
 
@@ -168,7 +168,7 @@ the other two — see `app/src/api/config.ts`.
 
 ### 3b. The prebuilt release APK
 
-**Download it: [v1.0.1 on GitHub Releases](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.1)** — or the file directly: [skill-trial-blitz-v1.0.1.apk](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.1/skill-trial-blitz-v1.0.1.apk). Android 7.0+ on a 64-bit phone, and an internet connection. Nothing else.
+**Download it: [v1.0.2 on GitHub Releases](https://github.com/mj789-98/skill-trial-blitz/releases/tag/v1.0.2)** — or the file directly: [skill-trial-blitz-v1.0.2.apk](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.2/skill-trial-blitz-v1.0.2.apk). Android 7.0+ on a 64-bit phone, and an internet connection. Nothing else.
 
 `app/android/app/build/outputs/apk/release/app-release.apk`, arm64-v8a, signed
 with the standard Android debug key so it installs without you generating one.
