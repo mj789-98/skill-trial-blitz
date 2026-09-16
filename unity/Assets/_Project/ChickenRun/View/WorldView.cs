@@ -361,13 +361,24 @@ namespace SkillApp.ChickenRun.View
                 else if (kind == Sim.RowRail)
                 {
                     var sched = Sim.RailSchedule(state.Seed, row);
-                    if (Sim.TrainPresent(sched, state.Tick))
+                    if (Sim.TrainSpan(sched, state.Tick, out int startSub))
                     {
+                        // Drawn where the simulation says it is, and slid along
+                        // by the same alpha as the traffic so 50Hz logic reads
+                        // as a train travelling rather than a slab blinking on.
+                        float startCells =
+                            (startSub + sched.Dir * sched.Speed * game.TickAlpha) / (float)Sim.Sub;
+                        float cells = sched.LengthSub / (float)Sim.Sub;
+
                         var go = TakeTrain();
                         const float trainHeight = 1.05f;
-                        go.transform.localScale = new Vector3(Sim.Cols, trainHeight, 0.72f);
-                        go.transform.localPosition =
-                            new Vector3((Sim.Cols - 1) * 0.5f, 0.5f + trainHeight * 0.5f, row);
+                        go.transform.localScale = new Vector3(cells, trainHeight, 0.72f);
+                        // Same offset convention as every other mover: a body is
+                        // drawn from half a cell left of its own position.
+                        go.transform.localPosition = new Vector3(
+                            startCells + cells * 0.5f - 0.5f,
+                            0.5f + trainHeight * 0.5f,
+                            row);
                     }
                     else if (Sim.TrainWarning(sched, state.Tick))
                     {

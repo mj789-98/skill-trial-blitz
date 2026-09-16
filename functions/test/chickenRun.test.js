@@ -311,7 +311,9 @@ test('a train is always announced before it arrives', () => {
     for (let row = 3; row < 40; row++) {
       if (rowTypeAt(seed, row) !== sim.ROW_RAIL) continue;
       const sched = sim.railSchedule(seed, row);
-      assert.ok(sched.periodTicks > sched.occupyTicks + sched.warnTicks);
+      // The gap between trains must outlast one full crossing plus its
+      // lead-in, or a cycle would overlap the next one's warning.
+      assert.ok(sched.periodTicks > sched.runTicks + sched.warnTicks);
       for (let t = 0; t < sched.periodTicks * 3; t++) {
         if (sim.trainPresent(sched, t)) {
           assert.ok(sim.trainWarning(sched, t), 'train present with no warning');
@@ -366,6 +368,64 @@ test('rivers and roads agree on where the chicken is', () => {
         sim.vehicleUnder(lane, colSub, tick),
         `river and road disagreed at tick ${tick}, col ${col}`
       );
+    }
+  }
+});
+
+// ── The train ───────────────────────────────────────────────────────────────
+//
+// It used to be a boolean: the whole row lethal for 25 ticks, with nothing
+// travelling. These pin the two properties that replaced it -- it crosses, and
+// it costs a given column exactly the half-second the boolean used to cost.
+
+test('a train crosses the row instead of filling it', () => {
+  const sched = sim.railSchedule(sim.parseSeed('4242'), 3);
+  const seen = new Set();
+
+  for (let t = 0; t < sched.runTicks; t++) {
+    const covered = [];
+    for (let col = 0; col < COLS; col++) {
+      if (sim.trainUnder(sched, col * SUB, t - sched.phaseTicks)) covered.push(col);
+    }
+    for (const c of covered) seen.add(c);
+
+    // A four-cell train can touch at most five columns, and they are adjacent.
+    assert.ok(covered.length <= 5, `train covered ${covered.length} columns at t=${t}`);
+    for (let i = 1; i < covered.length; i++) {
+      assert.equal(covered[i], covered[i - 1] + 1, 'the train had a hole in it');
+    }
+  }
+
+  assert.equal(seen.size, COLS, 'the train did not reach every column');
+});
+
+test('a train costs one column exactly half a second, as the flag did', () => {
+  const sched = sim.railSchedule(sim.parseSeed('99'), 5);
+  const col = 4;
+  let lethal = 0;
+  let runs = 0;
+  let prev = false;
+
+  for (let t = 0; t < sched.periodTicks; t++) {
+    const hit = sim.trainUnder(sched, col * SUB, t - sched.phaseTicks);
+    if (hit) lethal++;
+    if (hit && !prev) runs++;
+    prev = hit;
+  }
+
+  assert.equal(lethal, 25, 'the danger window moved away from 0.5s');
+  assert.equal(runs, 1, 'a single train should pass a column once');
+});
+
+test('the signal is flashing whenever the train can kill you', () => {
+  for (const seed of ['1', '7', '1234567', '90802087']) {
+    const sched = sim.railSchedule(sim.parseSeed(seed), 2);
+    for (let tick = 0; tick < sched.periodTicks * 3; tick++) {
+      for (let col = 0; col < COLS; col++) {
+        if (sim.trainUnder(sched, col * SUB, tick)) {
+          assert.ok(sim.trainWarning(sched, tick), `unannounced train on seed ${seed}`);
+        }
+      }
     }
   }
 });

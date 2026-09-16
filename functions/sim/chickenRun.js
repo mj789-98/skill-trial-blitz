@@ -303,6 +303,29 @@ function spanCovers(pos, lengthSub, p) {
  * flashes during the warning window so the hazard is always announced before it
  * arrives — the player must be able to read it, or the death is unfair.
  */
+/**
+ * A train is four cells of steel, and it TRAVELS.
+ *
+ * It used to be a boolean: for 25 ticks the whole row was lethal, and the
+ * renderer drew a board-wide slab that blinked into existence. A tester said it
+ * "appears on the track all of a sudden instead of coming in via the railway",
+ * and he was right — nothing moved, so there was nothing to read except a
+ * timer.
+ *
+ * Now it crosses like a very fast, very long car, and the numbers are chosen so
+ * the DANGER IS UNCHANGED: 4000 sub-units of train at 160 sub-units per tick
+ * means any one column is lethal for exactly 4000/160 = 25 ticks, the 0.5s the
+ * boolean used to cost. What changes is that the player can now see it coming
+ * and can be somewhere else, exactly as with traffic.
+ *
+ * At 160 sub/tick a train covers 8 cells a second — faster than the quickest
+ * car (2.8), which is the point: a railway is not a road.
+ */
+const TRAIN_LENGTH_SUB = 4 * SUB;
+const TRAIN_SPEED_SUB = 160;
+/** Ticks for the train to travel its own length plus the whole board. */
+const TRAIN_RUN_TICKS = Math.ceil((TRACK_SUB + TRAIN_LENGTH_SUB) / TRAIN_SPEED_SUB);
+
 function railSchedule(seedUint32, row) {
   const rng = mulberry32(rowSeed(seedUint32, row) ^ 0x27d4eb2f);
   return {
@@ -310,23 +333,59 @@ function railSchedule(seedUint32, row) {
     periodTicks: 200 + below(rng, 176),
     // Phase, so adjacent rails do not fire in lockstep.
     phaseTicks: below(rng, 200),
-    // The train occupies the row for 0.5s.
-    occupyTicks: 25,
-    // 1.4s of flashing signal before it arrives.
+    // Which way it runs. Drawn last so the two values above keep their meaning
+    // for anyone reading an old trace.
+    dir: below(rng, 2) === 0 ? 1 : -1,
+    speed: TRAIN_SPEED_SUB,
+    lengthSub: TRAIN_LENGTH_SUB,
+    runTicks: TRAIN_RUN_TICKS,
+    // 1.4s of flashing signal before it enters.
     warnTicks: 70,
   };
 }
 
-/** Is a train physically on this row right now? */
+/** Ticks into the current cycle. */
+function railPhase(sched, tick) {
+  return (((tick + sched.phaseTicks) % sched.periodTicks) + sched.periodTicks) % sched.periodTicks;
+}
+
+/**
+ * Where the train is, or null if the row is clear.
+ *
+ * `startSub` is the trailing end and may be negative or past the end of the
+ * board: the train is off-board at both ends of its run, which is what makes it
+ * arrive from somewhere rather than materialise. It does NOT wrap — a train is
+ * a single pass, not a body circling the lane.
+ */
+function trainSpan(sched, tick) {
+  const t = railPhase(sched, tick);
+  if (t >= sched.runTicks) return null;
+  const startSub =
+    sched.dir > 0
+      ? -sched.lengthSub + sched.speed * t
+      : TRACK_SUB - sched.speed * t;
+  return { startSub, lengthSub: sched.lengthSub };
+}
+
+/** Is a train physically on this row right now, anywhere along it? */
 function trainPresent(sched, tick) {
-  const t = (((tick + sched.phaseTicks) % sched.periodTicks) + sched.periodTicks) % sched.periodTicks;
-  return t < sched.occupyTicks;
+  return trainSpan(sched, tick) !== null;
+}
+
+/** Is the train occupying the chicken's own position? */
+function trainUnder(sched, colSub, tick) {
+  const span = trainSpan(sched, tick);
+  if (span === null) return false;
+  // The centre of the bird, same as every other hazard. Not wrapped, because
+  // the train's span is not wrapped either.
+  const p = colSub + SUB / 2;
+  return p >= span.startSub && p < span.startSub + span.lengthSub;
 }
 
 /** Is the crossing signal flashing? Exposed so the renderer and the sim agree. */
 function trainWarning(sched, tick) {
-  const t = (((tick + sched.phaseTicks) % sched.periodTicks) + sched.periodTicks) % sched.periodTicks;
-  return t >= sched.periodTicks - sched.warnTicks || t < sched.occupyTicks;
+  const t = railPhase(sched, tick);
+  return t >= sched.periodTicks - sched.warnTicks || t < sched.runTicks;
 }
 
 // ── Trace encoding ──────────────────────────────────────────────────────────
@@ -485,7 +544,7 @@ function step(state, actions) {
       return state.reason;
     }
   } else if (kind === ROW_RAIL) {
-    if (trainPresent(railSchedule(state.seed, state.row), state.tick)) {
+    if (trainUnder(railSchedule(state.seed, state.row), state.colSub, state.tick)) {
       state.reason = END_DEATH;
       return state.reason;
     }
@@ -662,6 +721,11 @@ module.exports = {
   railSchedule,
   trainPresent,
   trainWarning,
+  trainSpan,
+  trainUnder,
+  TRAIN_LENGTH_SUB,
+  TRAIN_SPEED_SUB,
+  TRAIN_RUN_TICKS,
 
   // trace + replay
   encodeTrace,

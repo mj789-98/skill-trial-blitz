@@ -247,11 +247,28 @@ namespace SkillApp.ChickenRun.Simulation
             return p >= pos || p < end - TrackSub;
         }
 
+        /// <summary>
+        /// A train is four cells of steel, and it TRAVELS. It used to be a
+        /// boolean that made the whole row lethal for 25 ticks while the view
+        /// drew a board-wide slab out of nowhere.
+        ///
+        /// The numbers keep the danger identical: 4000 sub-units of train at
+        /// 160 sub-units per tick leaves any one column lethal for exactly
+        /// 4000/160 = 25 ticks. Only the player's ability to see it coming and
+        /// stand somewhere else is new.
+        /// </summary>
+        public const int TrainLengthSub = 4 * Sub;
+        public const int TrainSpeedSub = 160;
+        public static readonly int TrainRunTicks = CeilDiv(TrackSub + TrainLengthSub, TrainSpeedSub);
+
         public struct Rail
         {
             public int PeriodTicks;
             public int PhaseTicks;
-            public int OccupyTicks;
+            public int Dir;
+            public int Speed;
+            public int LengthSub;
+            public int RunTicks;
             public int WarnTicks;
         }
 
@@ -262,13 +279,43 @@ namespace SkillApp.ChickenRun.Simulation
             {
                 PeriodTicks = 200 + rng.Below(176),
                 PhaseTicks = rng.Below(200),
-                OccupyTicks = 25,
+                Dir = rng.Below(2) == 0 ? 1 : -1,
+                Speed = TrainSpeedSub,
+                LengthSub = TrainLengthSub,
+                RunTicks = TrainRunTicks,
                 WarnTicks = 70,
             };
         }
 
-        public static bool TrainPresent(Rail s, int tick) =>
-            Mod(tick + s.PhaseTicks, s.PeriodTicks) < s.OccupyTicks;
+        private static int CeilDiv(int a, int b) => (a + b - 1) / b;
+
+        public static int RailPhase(Rail s, int tick) => Mod(tick + s.PhaseTicks, s.PeriodTicks);
+
+        /// <summary>
+        /// Where the train is. Returns false when the row is clear. StartSub is
+        /// the trailing end and is off-board at both ends of the run, so the
+        /// train arrives from somewhere instead of materialising. It does not
+        /// wrap: a train is a single pass, not a body circling the lane.
+        /// </summary>
+        public static bool TrainSpan(Rail s, int tick, out int startSub)
+        {
+            int t = RailPhase(s, tick);
+            if (t >= s.RunTicks) { startSub = 0; return false; }
+            startSub = s.Dir > 0 ? -s.LengthSub + s.Speed * t : TrackSub - s.Speed * t;
+            return true;
+        }
+
+        public static bool TrainPresent(Rail s, int tick) => TrainSpan(s, tick, out _);
+
+        /// <summary>Is the train occupying the chicken's own position?</summary>
+        public static bool TrainUnder(Rail s, int colSub, int tick)
+        {
+            if (!TrainSpan(s, tick, out int startSub)) return false;
+            // The centre of the bird, as with every other hazard. Not wrapped,
+            // because the train's span is not wrapped either.
+            int p = colSub + Sub / 2;
+            return p >= startSub && p < startSub + s.LengthSub;
+        }
 
         /// <summary>
         /// Whether the crossing signal is flashing. Exposed so the renderer and
@@ -277,8 +324,8 @@ namespace SkillApp.ChickenRun.Simulation
         /// </summary>
         public static bool TrainWarning(Rail s, int tick)
         {
-            int t = Mod(tick + s.PhaseTicks, s.PeriodTicks);
-            return t >= s.PeriodTicks - s.WarnTicks || t < s.OccupyTicks;
+            int t = RailPhase(s, tick);
+            return t >= s.PeriodTicks - s.WarnTicks || t < s.RunTicks;
         }
 
         // ── Trace encoding ──────────────────────────────────────────────────
@@ -466,7 +513,7 @@ namespace SkillApp.ChickenRun.Simulation
             }
             else if (kind == RowRail)
             {
-                if (TrainPresent(RailSchedule(s.Seed, s.Row), s.Tick))
+                if (TrainUnder(RailSchedule(s.Seed, s.Row), s.ColSub, s.Tick))
                 {
                     s.Reason = EndDeath;
                     return s.Reason;
