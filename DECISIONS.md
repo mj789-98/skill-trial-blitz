@@ -1523,6 +1523,33 @@ print a cent that `floor` would never pay. A player who cannot predict a win he 
 trust a loss either, so this belongs in the same bucket as a wrong payout, not in a bucket marked
 "copy".
 
+**Then I shipped the fix to half the system.** The log and train fixes change the rules, and the
+rules exist twice: in the C# the phone plays and in the JavaScript the server replays to decide
+the payout. I changed both, tested both, proved them identical on 1000 parity cases, built the
+APK and published v1.0.5 — and never redeployed the Cloud Functions. The phone was playing by the
+new rules; the server was still replaying by the old ones.
+
+It surfaced within hours. Playing v1.0.5, Manas reached row 16 and held Cash Out, and the result
+screen said *No payout*. The server's log for that round reads `client claimed 16, replay produced
+0 (death)`: somewhere in that run he survived a train by standing away from it, which the new
+rules allow and the old boolean does not. The server did exactly what it was built to do — it
+refused the phone's number and paid on its own replay — and that replay was of a game that no
+longer existed.
+
+The first redeploy failed before uploading anything: the CLI gives up if the code takes more than
+ten seconds to load for analysis, and it succeeded with `FUNCTIONS_DISCOVERY_TIMEOUT=60`. The next
+recorded round went to 19, cashed out, and was paid $3.00 with no mismatch in the log. The v1.0.5
+release notes now say that rounds played between the release and the deploy could have been
+settled on the old rules.
+
+Why nothing caught it is the useful part. The parity check proves that the *code in the repository*
+agrees with itself; it knows nothing about which version of that code a server is running. Every
+check I have is a check on the source, and this defect lived entirely in the gap between the
+source and production. The fix is procedural rather than technical: a change under `functions/sim/`
+changes two deployables, so the server goes out **before** the APK — a newer server replaying for
+an older client is also wrong, but the client is the half a reviewer downloads, and it should never
+be the half that arrives first.
+
 **What I take from it.** My tests defend against unfairness and against disagreement between
 client and server, and they found neither of these because neither was unfair. The log bug needed
 a test written against the *drawing*, the train needed someone to watch it, and the payout needed
