@@ -64,6 +64,14 @@ export default function PayoutScreen({
     [quote.curve]
   );
 
+  // What hitting the target is worth, and what the best row on the table is
+  // worth. Both read off the curve itself: those are the cents the server will
+  // settle, so the summary line cannot contradict the table under it.
+  const targetPayoutCents = useMemo(() => {
+    const at = quote.curve.find((p) => p.score === quote.targetScore);
+    return at ? at.payoutCents : null;
+  }, [quote.curve, quote.targetScore]);
+
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.scroll}>
@@ -100,7 +108,7 @@ export default function PayoutScreen({
             <Goal label="Target" value={`${quote.targetScore}`} tone={colors.accent} />
             <Goal
               label="Most you can win"
-              value={money(Math.round(quote.stakeCents * quote.maxMultiplier))}
+              value={money(peak)}
               tone={colors.win}
             />
           </View>
@@ -117,9 +125,22 @@ export default function PayoutScreen({
         <View style={styles.curveHeader}>
           <Label>What a score is worth</Label>
           <Txt variant="small" color={colors.textFaint}>
-            locked at entry
+            every row locked at entry
           </Txt>
         </View>
+
+        {/* A tester read "locked at entry" as "your payout is locked at the
+            target", entered at 1.62x, scored well past the target and was paid
+            2.66x -- correctly, off this same table. The table was never wrong;
+            the screen simply never said out loud that the target is not a
+            ceiling. Now it does. */}
+        {targetPayoutCents !== null ? (
+          <Txt variant="small" color={colors.textFaint} style={styles.curveNote}>
+            Reach the target ({quote.targetScore}) and you win {money(targetPayoutCents)}.
+            The target is not a ceiling — every score above it pays more, up to{' '}
+            {money(peak)}. Whatever you score, it settles at the row below.
+          </Txt>
+        ) : null}
 
         <Card style={styles.curveCard}>
           {quote.curve.map((point, i) => {
@@ -269,6 +290,7 @@ const styles = StyleSheet.create({
     overflow: 'hidden',
   },
   barFill: { height: '100%', borderRadius: radius.pill },
+  curveNote: { marginBottom: 8 },
   payoutCol: { width: 74, alignItems: 'flex-end' },
   marker: { position: 'absolute', left: 0, width: 3, height: 22, borderRadius: radius.pill },
   fineprint: { lineHeight: 19 },
