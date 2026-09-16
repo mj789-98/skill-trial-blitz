@@ -27,7 +27,7 @@ macOS host, so iOS was never actually available. See `DECISIONS.md` → D-001.
 New players are capped at a $1 entry and a 1.5× payout for their first rounds —
 that is the cold-start protection (D-011), not a bug.
 
-**See it running:** a one-minute [screen recording on a real phone](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.3/screen-recording-v1.0.3.mp4), plus three screens the recording does not reach:
+**See it running:** a [53-second screen recording of v1.0.5 on a real phone](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.5/screen-recording-v1.0.5.mp4) against the live backend — a Blitz death that pays $0.00, trains crossing the track, a run to 19 rows **held to Cash Out and paid $3.00 on a $1.00 entry** (3.00x, settled by the server's replay), and a Pop Shot round with the basket moving. The [earlier v1.0.3 recording](https://github.com/mj789-98/skill-trial-blitz/releases/download/v1.0.3/screen-recording-v1.0.3.mp4) is kept for the break-even and Pop Shot footage. Plus three screens neither recording reaches:
 
 | Not enough balance for a stake | Server unreachable at start-up | A request fails mid-session (airplane mode) |
 |---|---|---|
