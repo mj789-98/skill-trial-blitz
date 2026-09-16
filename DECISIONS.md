@@ -1477,11 +1477,23 @@ boolean made the whole row lethal for half a second while the view flashed a boa
 existence, so the only skill available was memorising a timer. Nothing in a correctness suite can
 notice that a hazard has no physical story.
 
-The fix had a constraint I set before writing it: the tuning must not move. So the train is four
-cells at 160 sub-units a tick, and 4000/160 is exactly the 25 ticks the boolean used to cost, which
-means any single column is dangerous for precisely as long as it was. Re-running the harness on the
-shipped config gave 86.3% RTP against the committed 86.4% — the difference is noise. The game got a
-train and the economy did not notice, and that is only checkable because the harness exists.
+The train is four cells at 160 sub-units a tick, and 4000/160 is exactly the 25 ticks the boolean
+used to cost, so any single column is dangerous for precisely as long as it was. That is what the
+arithmetic guarantees, and it is all it guarantees: the row is no longer blocked end to end, so a
+player standing away from the train survives where the boolean killed him. Crossing a railway is
+easier than it was.
+
+*Correction to the first version of this entry.* I originally wrote that re-running the harness
+gave 86.3% RTP against the committed 86.4%, and that the economy "did not notice" the train. Both
+halves were wrong. The 86.3% came from 200 players per archetype, not the report's 300; at 300 the
+result is 86.4% to the decimal. And an identical number proves nothing here, because — as D-027
+records — Chicken Run's synthetic players draw their reach from a skill distribution and never call
+`simulate()`. The harness cannot see a train. I cited it as evidence for a change it is blind to by
+construction, which is the exact mistake D-027 was written to prevent; a second review caught the
+sample size, and checking why the number was identical to the decimal caught the rest. What
+actually absorbs an easier game is the per-player target ratchet (D-010): a player who reaches
+further gets a higher target. That is a claim about the design, not a measurement, and it should be
+stated as one.
 
 **The payout was correct and the screen was wrong, which is the most dangerous of the three.**
 His curve paid 1.62x at the target and kept climbing above it, to 3.0x at 1.75× target; he scored
