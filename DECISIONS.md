@@ -1445,3 +1445,62 @@ about the one runtime a reviewer would actually use. Finding it took reading the
 source rather than trusting that code which worked locally would work deployed — and the general
 point is that a test suite certifies the environment it runs in, not the one you ship to.
 
+---
+
+## D-032 — Three bugs a tester found in twenty minutes, and what each one was really about
+
+A reviewer played the released build and reported three things: his chicken drowned while standing
+on a log, the train "appears on the track all of a sudden instead of coming in via the railway",
+and a $10 entry that said 1.62x paid him 2.662x. Three reports, three different kinds of defect,
+and only one of them was a bug in the arithmetic.
+
+**The log was a real bug, and it was in the money path.** Every hazard asks the same question —
+is the chicken's position covered by this body — and the code answered it twice. `vehicleUnder`
+tested the centre of the bird; `logUnder` tested its raw sub-position. Those are half a cell
+apart. The renderer draws a body from half a cell left of its own position, so the road test
+happened to agree with the drawing and the river test did not: a log's *safe* span sat half a
+cell right of the log on screen. The visible left edge of every log was water, and half a cell of
+visible water past the right edge was solid. The tester stood where the game told him to stand and
+the simulation killed him for it.
+
+What makes this worth writing down is where it lived. This is the server's replay — the thing that
+decides payouts — so it is not a rendering bug with a rendering fix. Both halves of the question
+now go through one `chickenPointSub`, mirrored into the C# port, because "where is the chicken"
+cannot have two answers when one of them is paid out on. The test that guards it does not assert
+a magic number; it asserts that the supported span *equals the drawn span*, which is the property
+that was actually violated.
+
+**The train was not a bug at all, which is why nobody caught it.** It passed every test, because
+every test asked whether it was fair: the signal led it by 1.4s, the period never overlapped the
+warning, and the sim and renderer read the same schedule. It was fair and it was unreadable. A
+boolean made the whole row lethal for half a second while the view flashed a board-wide slab into
+existence, so the only skill available was memorising a timer. Nothing in a correctness suite can
+notice that a hazard has no physical story.
+
+The fix had a constraint I set before writing it: the tuning must not move. So the train is four
+cells at 160 sub-units a tick, and 4000/160 is exactly the 25 ticks the boolean used to cost, which
+means any single column is dangerous for precisely as long as it was. Re-running the harness on the
+shipped config gave 86.3% RTP against the committed 86.4% — the difference is noise. The game got a
+train and the economy did not notice, and that is only checkable because the harness exists.
+
+**The payout was correct and the screen was wrong, which is the most dangerous of the three.**
+His curve paid 1.62x at the target and kept climbing above it, to 3.0x at 1.75× target; he scored
+well past his target, so 2.662x is what his frozen curve owed him, off the very table he had been
+shown. But the table was headed "locked at entry", and he read that as "your payout is locked at
+$16.20". Everything the system did was right, and he still came away believing the number moved
+after he paid.
+
+I had treated showing the whole curve as sufficient disclosure. It is not: a player reads a screen
+for the one number that concerns him, and "locked" next to $16.20 answers his question wrongly. The
+screen now says the target is not a ceiling, names what the target pays and what the top row pays,
+and takes both figures off the curve the server will settle rather than recomputing them — the
+"most you can win" line had been the one floating-point number on the screen, and `round` could
+print a cent that `floor` would never pay. A player who cannot predict a win he just had will not
+trust a loss either, so this belongs in the same bucket as a wrong payout, not in a bucket marked
+"copy".
+
+**What I take from it.** My tests defend against unfairness and against disagreement between
+client and server, and they found neither of these because neither was unfair. The log bug needed
+a test written against the *drawing*, the train needed someone to watch it, and the payout needed
+someone to read it. Twenty minutes of a stranger playing found all three; none of my 132 automated
+checks could have.
