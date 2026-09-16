@@ -437,10 +437,18 @@ Measured at 300 players per archetype, same seed, same population:
 | 1.72 | 89.0% | 107.7% |
 
 88% is available, at 1.68. It puts the strong-disciplined cohort at **104.7%** — the mode
-paying its best players to play. 1.62 is the last point before that cohort goes
-net-positive, and 86.4% is what it returns. Given a choice between a rounder headline
-number and a config where every cohort's economics hold, the second is the one I can
-defend in a room.
+clearly paying its best players to play. At 1.62 that cohort sits at **100.3%**, and
+expert-greedy at **100.2%** (full table in the report): at break-even, within a third of a
+point of it, where 1.68 is nearly five points over. So 1.62 is the highest multiplier at
+which the strongest cohorts sit *at* break-even rather than clearly above it, and 86.4% is
+what it returns. Given a choice between a rounder headline number and a config that does not
+meaningfully pay anyone to play, the second is the one I can defend in a room.
+
+(An earlier version of this paragraph called 1.62 "the last point before that cohort goes
+net-positive", and the seed file said no cohort was. At 100.3% and 100.2% that is not true,
+and the table directly above said so. A second review caught it. The honest line is "at
+break-even", and the only row on this table that puts strong-disciplined clearly below it is
+1.55, which costs two points of headline RTP to buy 3 points of margin on one cohort.)
 
 (An earlier draft of this table quoted 88.0% at `mult(target) = 1.64`. That came from a
 smaller sample on a slightly different shape, and re-measuring at a consistent sample size
@@ -1313,8 +1321,12 @@ seconds — one every 4.4s — against roughly the same +3s, so their reward is 
 than their cycle costs and their clock still drains. Our game just lets a good player score
 much faster than theirs does. The honest lever was what a basket pays.
 
-**Retuned: `popshot-v2`, 87.1% RTP**, no cohort net-positive, which is the rule `tuned-v1` was
-chosen under. `popshot-v1` is retired rather than edited, and its note records that its 89.7%
+**Retuned: `popshot-v2`, 87.1% RTP**, no cohort net-positive. (Not quite the rule `tuned-v1` was
+chosen under: that config leaves its two strongest cohorts at 100.3% and 100.2%, at break-even,
+and D-012 now says so. Pop Shot's strongest cohort sits near 91%, so here the claim holds with
+room to spare. The 87.1% is a mean over seeds, because Pop Shot's harness plays the real game and
+is noisier: five seeds at 150 players give 86.4 to 88.7%, mean 87.2%. The committed
+`docs/tuning-report-popshot.md` is one of them, seed 20260101, at 86.6%.) `popshot-v1` is retired rather than edited, and its note records that its 89.7%
 was measured against a game that no longer exists.
 
 Two smaller things fell out of it, both worth stating because both were invisible until

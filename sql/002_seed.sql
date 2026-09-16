@@ -103,9 +103,9 @@ where not exists (
 --
 -- RTP 86.4% weighted across the population, win rate 40.6%, bust rate 13.2%.
 -- Chosen over the 88.0% variant deliberately: the frontier is sharp, and at
--- 88.0% the strong-disciplined cohort returns 102.6% — the mode would be paying
--- its best players to play. 86.4% is the nearest point where no cohort is
--- net-positive.
+-- 88.0% the strong-disciplined cohort returns 104.7% — the mode would be paying
+-- its best players to play. At 86.4% the two strongest cohorts sit at 100.3%
+-- and 100.2%: at break-even rather than clearly above it. See D-012.
 --
 -- The active config is switched in the same statement that inserts the new one,
 -- because blitz_config_one_active_per_game is a UNIQUE partial index: two active
@@ -243,8 +243,9 @@ where not exists (
 -- sits below the target caught exactly that. 6 is the smallest cold start that
 -- keeps the two apart.
 --
--- 87.1% RTP weighted across the population. Per cohort no one is net-positive,
--- which is the rule tuned-v1 was chosen under too. Beginners still do best of
+-- 87.1% RTP weighted across the population (a five-seed mean; single seeds
+-- range 86.4-88.7%). Per cohort no one is net-positive -- the strongest sits
+-- near 91% -- which is a wider margin than tuned-v1 has (see D-012). Beginners still do best of
 -- the four, and that is inherent to a target that adapts per player: a low
 -- target is easier to clear relative to its own variance. The spread is about
 -- 11 points rather than the 31 that made a separate Pop Shot config necessary

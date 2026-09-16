@@ -19,16 +19,16 @@ closed loop — player, engine, curve — not a fixed paytable.
 
 | variant | RTP (weighted) | win rate | any payout | bust rate | median rounds |
 |---|---|---|---|---|---|
-| popshot-v1.json | **89.8%** | 26.6% | 96.9% | 27.5% | 60 |
+| popshot-v2 | **86.6%** | 30.6% | 98.8% | 26.8% | 60 |
 
 RTP is weighted by the population mix rather than pooled, so a rare archetype
 that survives many rounds cannot dominate a headline it does not represent.
 
-## popshot-v1.json
+## popshot-v2
 
 | archetype | policy | mean reach | mean target | RTP | win rate | any payout | died | busted | median rounds |
 |---|---|---|---|---|---|---|---|---|---|
-| novice | timing | 3.6 | 10.8 | 90.4% | 27.6% | 98.5% | 0.0% | 18.0% | 60 |
-| average | timing | 3.5 | 9.9 | 92.4% | 27.6% | 98.1% | 0.0% | 23.3% | 60 |
-| strong | timing | 4.2 | 10.2 | 88.0% | 25.2% | 96.7% | 0.0% | 29.3% | 60 |
-| expert | timing | 6.6 | 15.7 | 85.0% | 25.1% | 93.9% | 0.0% | 39.3% | 60 |
+| novice | aim | 1.9 | 5.5 | 91.2% | 28.2% | 95.5% | 0.0% | 19.3% | 60 |
+| average | aim | 3.0 | 8.9 | 87.7% | 32.1% | 99.9% | 0.0% | 34.0% | 60 |
+| strong | aim | 4.2 | 12.3 | 82.3% | 30.4% | 100.0% | 0.0% | 28.7% | 60 |
+| expert | aim | 4.4 | 12.5 | 84.2% | 31.9% | 100.0% | 0.0% | 25.3% | 60 |
