@@ -578,9 +578,31 @@ function simulate(seed, traceB64) {
 }
 
 
+/**
+ * The sub-position the chicken is TESTED at: the centre of the bird.
+ *
+ * The renderer draws the chicken centred on `colSub` and draws every body on a
+ * lane starting half a cell to the left of its own position, so a body's drawn
+ * span is [pos - SUB/2, pos - SUB/2 + length). Testing the chicken's centre is
+ * what makes the simulation agree with that drawing.
+ *
+ * Roads already did this. Rivers did not: they tested `colSub` raw, which put
+ * the log's SAFE span half a cell to the right of the log the player can see —
+ * so the left edge of every log looked solid and drowned you, and half a cell
+ * of open water past its right edge silently held you up. One rule for both
+ * now, because "where is the chicken" cannot have two answers.
+ *
+ * On a road the chicken is always cell-aligned (only a river carries it
+ * off-grid, and a hop re-aligns it), so this is identical to the cell-centre
+ * form it replaces there.
+ */
+function chickenPointSub(colSub) {
+  return (((colSub + SUB / 2) % TRACK_SUB) + TRACK_SUB) % TRACK_SUB;
+}
+
 /** Index of the log under `colSub` at `tick`, or -1 if there is only water. */
 function logUnder(lane, colSub, tick) {
-  const p = ((colSub % TRACK_SUB) + TRACK_SUB) % TRACK_SUB;
+  const p = chickenPointSub(colSub);
   for (let i = 0; i < lane.count; i++) {
     if (spanCovers(bodyPos(lane, i, tick), lane.lengthSub, p)) return i;
   }
@@ -589,10 +611,9 @@ function logUnder(lane, colSub, tick) {
 
 /** Is a vehicle occupying the chicken's cell? */
 function vehicleUnder(lane, colSub, tick) {
-  // The chicken is a point at the centre of its cell. Using the centre rather
-  // than the whole cell means a near-miss reads as a near-miss instead of a
+  // A point, not the whole cell: a near-miss reads as a near-miss instead of a
   // death, which is what makes the game feel fair rather than twitchy.
-  const p = (Math.floor(colSub / SUB) * SUB + SUB / 2) % TRACK_SUB;
+  const p = chickenPointSub(colSub);
   for (let i = 0; i < lane.count; i++) {
     if (spanCovers(bodyPos(lane, i, tick), lane.lengthSub, p)) return true;
   }
@@ -634,6 +655,10 @@ module.exports = {
   grassObstacleMask,
   laneTraffic,
   bodyPos,
+  spanCovers,
+  chickenPointSub,
+  logUnder,
+  vehicleUnder,
   railSchedule,
   trainPresent,
   trainWarning,

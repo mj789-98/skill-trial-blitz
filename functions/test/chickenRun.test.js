@@ -325,3 +325,47 @@ test('a train is always announced before it arrives', () => {
     }
   }
 });
+
+// ── Where the chicken is tested ─────────────────────────────────────────────
+//
+// A tester reported drowning while standing on the side of a log. The cause was
+// two different answers to "where is the chicken": roads tested the centre of
+// the bird, rivers tested its raw position, and the two are half a cell apart.
+
+test('a log holds the chicken up exactly where the log is drawn', () => {
+  // One stationary log, 2 cells long, starting at sub-position 2000.
+  const lane = { dir: 1, count: 1, speed: 0, gap: TRACK_SUB, offset: 2000, lengthSub: 2 * SUB };
+
+  // The view draws a body from half a cell left of its position, so this log
+  // covers the span [1500, 3500) in the same coordinates the chicken is drawn
+  // in. That span, and nothing else, must be solid ground.
+  const drawnFrom = lane.offset - SUB / 2;
+  const drawnTo = drawnFrom + lane.lengthSub;
+
+  for (let colSub = drawnFrom - 2 * SUB; colSub < drawnTo + 2 * SUB; colSub += 100) {
+    const onLog = sim.logUnder(lane, colSub, 0) >= 0;
+    const onDrawnLog = colSub >= drawnFrom && colSub < drawnTo;
+    assert.equal(onLog, onDrawnLog, `support disagreed with the drawing at ${colSub}`);
+  }
+
+  // The two ends the old off-by-half-a-cell rule got wrong, named explicitly.
+  assert.ok(sim.logUnder(lane, drawnFrom, 0) >= 0, 'the leading edge drowned the chicken');
+  assert.ok(sim.logUnder(lane, drawnTo, 0) < 0, 'open water past the log held the chicken up');
+});
+
+test('rivers and roads agree on where the chicken is', () => {
+  // Same lane geometry, read as a river and as a road: a cell that is solid on
+  // one must be lethal on the other, or the game is telling two stories.
+  const lane = { dir: -1, count: 2, speed: 37, gap: Math.floor(TRACK_SUB / 2), offset: 4321, lengthSub: 2 * SUB };
+
+  for (let tick = 0; tick < 200; tick++) {
+    for (let col = 0; col < COLS; col++) {
+      const colSub = col * SUB;
+      assert.equal(
+        sim.logUnder(lane, colSub, tick) >= 0,
+        sim.vehicleUnder(lane, colSub, tick),
+        `river and road disagreed at tick ${tick}, col ${col}`
+      );
+    }
+  }
+});

@@ -560,9 +560,23 @@ namespace SkillApp.ChickenRun.Simulation
         }
 
 
+        /// <summary>
+        /// The sub-position the chicken is TESTED at: the centre of the bird.
+        ///
+        /// The view draws the chicken centred on ColSub and draws every body on
+        /// a lane starting half a cell left of its own position, so a body's
+        /// drawn span is [pos - Sub/2, pos - Sub/2 + length). Testing the centre
+        /// is what makes the simulation agree with that drawing.
+        ///
+        /// Roads already did this; rivers tested ColSub raw, which put a log's
+        /// safe span half a cell right of the log the player can see. One rule
+        /// for both now — "where is the chicken" cannot have two answers.
+        /// </summary>
+        public static int ChickenPointSub(int colSub) => Mod(colSub + Sub / 2, TrackSub);
+
         public static int LogUnder(Lane lane, int colSub, int tick)
         {
-            int p = Mod(colSub, TrackSub);
+            int p = ChickenPointSub(colSub);
             for (int i = 0; i < lane.Count; i++)
             {
                 if (SpanCovers(BodyPos(lane, i, tick), lane.LengthSub, p)) return i;
@@ -572,10 +586,10 @@ namespace SkillApp.ChickenRun.Simulation
 
         public static bool VehicleUnder(Lane lane, int colSub, int tick)
         {
-            // The chicken is a point at the centre of its cell. Using the centre
-            // rather than the whole cell makes a near-miss read as a near-miss
-            // instead of a death.
-            int p = (FloorDiv(colSub, Sub) * Sub + Sub / 2) % TrackSub;
+            // A point, not the whole cell: a near-miss reads as a near-miss
+            // instead of a death. On a road the chicken is always cell-aligned,
+            // so this is the same point the cell-centre form used to give.
+            int p = ChickenPointSub(colSub);
             for (int i = 0; i < lane.Count; i++)
             {
                 if (SpanCovers(BodyPos(lane, i, tick), lane.LengthSub, p)) return true;
