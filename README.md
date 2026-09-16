@@ -33,6 +33,12 @@ that is the cold-start protection (D-011), not a bug.
 |---|---|---|
 | <img src="docs/screenshots/insufficient-balance.png" width="270" alt="Lobby: the $20 stake greyed out with the line 'Your balance ($10.29) covers entries up to $10.00'; Pop Shot's stakes held back by the new-player cap"> | <img src="docs/screenshots/cannot-reach-server.png" width="270" alt="'Cannot reach the server' screen: nothing has been charged, with a Try again button"> | <img src="docs/screenshots/request-failed-offline.png" width="270" alt="Lobby in airplane mode with the banner 'Something went wrong. Nothing was charged.' and the balance unchanged"> |
 
+And the three fixes in v1.0.5, captured on the same phone (D-032):
+
+| The train arrives along the track… | …and crosses, so the row is survivable away from it | The payout screen says the target is not a ceiling |
+|---|---|---|
+| <img src="docs/screenshots/train-entering.png" width="270" alt="Chicken Run: a train entering the rail row from the right edge while the chicken stands on the track"> | <img src="docs/screenshots/train-crossing.png" width="270" alt="The same train further left along the rail row, with the chicken alive on that row past its leading end"> | <img src="docs/screenshots/payout-screen.png" width="270" alt="Blitz payout screen for a $1 entry: entry back at 3, target 6, most you can win $3.00, and the line 'Reach the target (6) and you win $1.62. The target is not a ceiling'"> |
+
 ---
 
 ## Versions
