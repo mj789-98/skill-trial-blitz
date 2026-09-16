@@ -293,8 +293,8 @@ project. It is here so the deployment is reproducible rather than remembered.
 
 | | command | count |
 | --- | --- | --- |
-| Backend — unit + integration | `npm --prefix functions test` | **127** |
-| App — reducer + formatting | `npm --prefix app test` | **18** |
+| Backend — unit + integration | `npm --prefix functions test` | **132** — 90 run anywhere; the 42 database tests need Postgres 17 running (step 1) and are skipped, not failed, without it |
+| App — reducer + formatting | `npm --prefix app test` | **27** |
 | End to end, through a real auth token | `npm --prefix functions run test:e2e` | **16 checks** |
 | Generated audio, measured | `SkillApp/Export Audio Preview` in Unity | **8 clips** |
 

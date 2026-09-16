@@ -26,7 +26,7 @@ Status key: **DONE** · **PARTIAL** · **TODO** · **N/A** (explicitly out of sc
 | 1.1 | React Native — app UI | DONE |
 | 1.2 | Unity — games | DONE |
 | 1.3 | `azesmway/react-native-unity` to embed | DONE — 1.1.1, builds to APK |
-| 1.4 | Supabase (PostgreSQL) | DONE — ap-south-1, PG 17.6, schema applied, and carrying the shipping configs: `chicken_run:tuned-v1` and `pop_shot:popshot-v2` both active, Blitz on for both games. It had drifted — it was seeded before the tuning harness existed and still held `baseline-v0` — which is why `tools/db/applySeed.js` exists. There are now 42 DB-backed tests (of 127 total). 24 of them ran against the transaction-mode pooler; the 18 added since are verified against local PG 17 only, because they mutate the shared `games` and `blitz_configs` rows and a mid-run failure would leave the hosted database inconsistent. What the pooler run establishes is host compatibility — transaction mode, `SET LOCAL` guards, no cross-statement session state — and that has not changed since. |
+| 1.4 | Supabase (PostgreSQL) | DONE — ap-south-1, PG 17.6, schema applied, and carrying the shipping configs: `chicken_run:tuned-v1` and `pop_shot:popshot-v2` both active, Blitz on for both games. It had drifted — it was seeded before the tuning harness existed and still held `baseline-v0` — which is why `tools/db/applySeed.js` exists. There are now 42 DB-backed tests (of 132 total). 24 of them ran against the transaction-mode pooler; the 18 added since are verified against local PG 17 only, because they mutate the shared `games` and `blitz_configs` rows and a mid-run failure would leave the hosted database inconsistent. What the pooler run establishes is host compatibility — transaction mode, `SET LOCAL` guards, no cross-statement session state — and that has not changed since. |
 | 1.5 | Firebase Auth | DONE — live on `mobileroomgame` (email/password for the shared test account, anonymous as its fallback), with the Auth emulator for development. The uid comes from the verified token, never the request body — proven by the e2e script and by the live smoke test |
 | 1.6 | Firebase Functions — the API | DONE — deployed to `mobileroomgame` in asia-south1, nine functions, and verified live end to end: sign-in, deposit through the ledger, quote, enter, a submit claiming 9999 paid on the replayed 0, and the balance moving by exactly the stake. Emulator for development. Runs on nodejs20, which the brief pins; Google stops accepting nodejs20 deploys on 2026-10-30, after which redeploying needs a newer runtime (D-031) |
 
@@ -206,10 +206,10 @@ are in DECISIONS D-018 and D-025.
 
 | Weight | Dimension | Where we stand |
 |---|---|---|
-| 30% | Correctness & server authority | strong — full loop, 127 backend tests + the e2e script + 1000 C#/JS parity cases, and the live backend smoke-tested end to end, threat model written |
+| 30% | Correctness & server authority | strong — full loop, 132 backend tests + 27 app tests + the e2e script + 1000 C#/JS parity cases, and the live backend smoke-tested end to end, threat model written |
 | 25% | **Game feel** | strong — two games, audio + haptics, lit shading and code-generated props, both proportioned against the reference footage and verified on a device |
 | 20% | Code quality & architecture | strong |
-| 15% | Product judgement & written reasoning | strong — 31 DECISIONS entries, with harness numbers behind the claims |
+| 15% | Product judgement & written reasoning | strong — 32 DECISIONS entries, with harness numbers behind the claims |
 | 10% | Polish & completeness | partial — art pass done and verified on device; the screen recording and screenshots (6.12) cover every feature except a cash-out win; the APK is downloadable (6.13) |
 
 ## 8. Explicitly out of scope
