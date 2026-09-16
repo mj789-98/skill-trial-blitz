@@ -2,7 +2,7 @@
 /**
  * The harness CLI.
  *
- *   node tools/sim/run.js                                  measure the live baseline
+ *   node tools/sim/run.js                                  measure the shipped config
  *   node tools/sim/run.js --sweep curve.cap_multiplier=2.5,3.0,3.5
  *   node tools/sim/run.js --stake 1000 --rounds 100
  *   node tools/sim/run.js --out docs/tuning-report.md      write the report
@@ -29,16 +29,41 @@ const PLAYERS = {
   pop_shot: { population: popPlayers.POPULATION, play: popPlayers.playRound },
 };
 
+/**
+ * What each game actually ships, and so what a bare run measures.
+ *
+ * The default used to be `baseline-v0` for every game, so the documented
+ * command `node tools/sim/run.js  # the live config` reported 61% RTP for a
+ * config retired long ago while the live one returns 86.4%. A reviewer
+ * running the README would have reproduced the wrong economy. Keep these in
+ * step with the active rows in sql/002_seed.sql.
+ */
+const SHIPPED_CONFIG = {
+  chicken_run: 'tuned-v1',
+  pop_shot: 'popshot-v2',
+};
+
+/**
+ * The sample each committed report was generated at, so a bare run reproduces
+ * that report to the decimal instead of landing a tenth away and looking like
+ * a discrepancy. Pop Shot is smaller because its players run the real
+ * simulation and cost far more per round.
+ */
+const REPORT_PLAYERS = {
+  chicken_run: 300, // docs/tuning-report.md
+  pop_shot: 150, // docs/tuning-report-popshot.md
+};
+
 function parseArgs(argv) {
   const args = {
-    config: 'baseline-v0',
+    config: null,
     game: 'chicken_run',
     file: null,
     compare: null,
     sweep: null,
     stake: 300,
     rounds: 60,
-    players: 200,
+    players: null,
     bankroll: 6000,
     seed: 20260101,
     out: null,
@@ -69,6 +94,10 @@ function parseArgs(argv) {
         if (key.startsWith('--')) throw new Error(`unknown option ${key}`);
     }
   }
+  // Resolved after parsing, so `--game pop_shot` alone measures Pop Shot's
+  // shipped config rather than Chicken Run's.
+  if (args.config === null && args.file === null) args.config = SHIPPED_CONFIG[args.game];
+  if (args.players === null) args.players = REPORT_PLAYERS[args.game] || 200;
   return args;
 }
 

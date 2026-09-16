@@ -313,7 +313,8 @@ token** — and that a `playerId` in the request body buys an attacker nothing.
 ## The tuning harness
 
 ```bash
-node tools/sim/run.js                                          # the live config
+node tools/sim/run.js                                          # Chicken Run's shipped config — reproduces docs/tuning-report.md
+node tools/sim/run.js --game pop_shot                          # Pop Shot's shipped config — reproduces docs/tuning-report-popshot.md
 node tools/sim/run.js --sweep curve.cap_multiplier=2.5,3.0,3.5 # numbers either side
 node tools/sim/run.js --compare baseline-v0,tuned-v1           # before and after
 ```
